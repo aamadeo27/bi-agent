@@ -1,0 +1,6 @@
+
+# DevTeam managed — regenerated on every deploy
+.claude/
+
+# DevTeam config — not tracked per-machine
+.devteam/

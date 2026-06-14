@@ -1,0 +1,26 @@
+name: validate-task-footer
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, edited, synchronize, reopened]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Validate squash-merge footers
+        env:
+          INTEGRATION_BRANCH: main
+          GITHUB_BASE_REF: ${{ github.base_ref }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          # Simulate the squash-merge commit GitHub will produce:
+          # subject = PR title, body = PR body.
+          tmp="$(mktemp)"
+          printf '%s\n\n%s\n' "$PR_TITLE" "$PR_BODY" > "$tmp"
+          bash .claude/hooks/validate-task-footer.sh "$tmp"
