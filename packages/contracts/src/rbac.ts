@@ -1,4 +1,3 @@
-// TODO: Full schema definition in contracts.md §rbac-model
 import { z } from "zod";
 
 export const RoleSchema = z.object({
@@ -13,6 +12,7 @@ export const RoleSchema = z.object({
 });
 export type Role = z.infer<typeof RoleSchema>;
 
+/** Additive grant — absence means no access. */
 export const ResourceGrantSchema = z.object({
   roleId: z.string(),
   dataSourceId: z.string(),

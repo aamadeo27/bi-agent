@@ -1,5 +1,6 @@
-// TODO: Full schema definition in contracts.md §chat-api and §result-envelope
 import { z } from "zod";
+import { SseBlockEventSchema } from "./permission-block.js";
+import { SseErrorEventSchema } from "./error-codes.js";
 
 export const ColumnTypeSchema = z.enum([
   "string",
@@ -29,6 +30,22 @@ export const ResultEnvelopeSchema = z.object({
 });
 export type ResultEnvelope = z.infer<typeof ResultEnvelopeSchema>;
 
+/** Request body for POST /api/conversations/:conversationId/messages */
+export const SendMessageRequestSchema = z.object({
+  text: z.string().min(1),
+});
+export type SendMessageRequest = z.infer<typeof SendMessageRequestSchema>;
+
+/** Item in GET /api/conversations list */
+export const ConversationSummarySchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  updatedAt: z.string().datetime(),
+});
+export type ConversationSummary = z.infer<typeof ConversationSummarySchema>;
+
+// SSE event payload schemas
+
 export const SseMetaEventSchema = z.object({
   messageId: z.string(),
   queryType: z.enum(["sql", "rest"]),
@@ -49,3 +66,40 @@ export const SseDoneEventSchema = z.object({
   messageId: z.string(),
 });
 export type SseDoneEvent = z.infer<typeof SseDoneEventSchema>;
+
+// Re-export block + error event types so consumers only need to import from chat
+export { SseBlockEventSchema } from "./permission-block.js";
+export type { SseBlockEvent } from "./permission-block.js";
+export { SseErrorEventSchema } from "./error-codes.js";
+export type { SseErrorEvent } from "./error-codes.js";
+
+/**
+ * All valid SSE `event:` names for this API.
+ * The `satisfies` constraint below ensures every name has a registered schema.
+ */
+export type SseEventName =
+  | "meta"
+  | "token"
+  | "result"
+  | "block"
+  | "error"
+  | "done";
+
+export type SseEventDataMap = {
+  meta: SseMetaEvent;
+  token: SseTokenEvent;
+  result: SseResultEvent;
+  block: z.infer<typeof SseBlockEventSchema>;
+  error: z.infer<typeof SseErrorEventSchema>;
+  done: SseDoneEvent;
+};
+
+// Compile-time check: every SseEventName has exactly one schema in this map.
+export const SSE_EVENT_SCHEMAS = {
+  meta: SseMetaEventSchema,
+  token: SseTokenEventSchema,
+  result: SseResultEventSchema,
+  block: SseBlockEventSchema,
+  error: SseErrorEventSchema,
+  done: SseDoneEventSchema,
+} satisfies Record<SseEventName, z.ZodTypeAny>;

@@ -1,6 +1,6 @@
-// TODO: Full schema definition in contracts.md §generated-query-view
 import { z } from "zod";
 
+/** Returned by GET /api/messages/:id/query (requires canInspectQuery capability). */
 export const GeneratedQueryViewSchema = z.object({
   messageId: z.string(),
   queryType: z.enum(["sql", "rest"]),
