@@ -101,3 +101,53 @@
 [2026-06-15T01:57:38Z] [coder] [Deliverable] .gitignore: extended existing file with pnpm+Turborepo+Node/TS+Vite+Prisma ignores; DevTeam.log and .env.example remain tracked
 [2026-06-15T01:57:38Z] [coder] [Deliverable] .github/workflows/ci.yml: minimal passing stub (echo placeholder); triggers push+pull_request
 [2026-06-15T01:57:38Z] [coder] [Finished] Two files written; no git commands run; no commits; no tests (stub files only)
+[2026-06-15T02:00:22Z] [orchestrator] [Usage checkpoint] phase=agent-post agent=coder iteration=1
+[2026-06-15T02:00:22Z] [orchestrator] [Repo created] https://github.com/aamadeo27/bi-agent public; main pushed; commit 6ef8166 chore: initialize repo
+[2026-06-15T02:00:22Z] [orchestrator] [Step 2 -> 3] repo init -> scaffold project skeleton
+[2026-06-15T02:00:49Z] [orchestrator] [Usage checkpoint] phase=agent-pre agent=coder iteration=2 model=sonnet
+[2026-06-15T02:01:00Z] [coder] [Started] Bootstrap step 3: scaffold empty-but-correct project skeleton; no business logic
+[2026-06-15T02:01:00Z] [coder] [Deliverable] Root: package.json (private, type=module, pnpm workspaces), pnpm-workspace.yaml, turbo.json (lint/typecheck/test:unit/test:integration/test:security/build/test:e2e), tsconfig.base.json (strict), eslint.config.js (flat config, globals-aware, no-llm-sdk-outside-adapters rule), .prettierrc, .env.example (all 15 env vars from bootstrap-plan.md §2)
+[2026-06-15T02:01:00Z] [coder] [Deliverable] packages/contracts: package.json (@bi/contracts), tsconfig.json, src/index.ts re-exporting 7 stub modules (chat.ts, rbac.ts, audit.ts, auth.ts, permission-block.ts, generated-query.ts, error-codes.ts); minimal Zod schemas + inferred types; src/index.test.ts (7 Vitest unit tests for schema stubs)
+[2026-06-15T02:01:00Z] [coder] [Deliverable] apps/api: package.json (@bi/api, express+zod+pino+@bi/contracts; devDeps tsup/vitest/supertest/tsx/typescript), tsconfig.json, src/index.ts (Express app, GET /health returns {status:'ok'}), src/health.test.ts (Vitest+Supertest, 1 unit test), 9 stub module dirs (auth/rbac/admin/ask/llm/datasource/conversations/audit/tenant/db), llm/port.ts+factory.ts+adapters/gemini.ts stubs, db/schema.prisma placeholder, vitest.config.ts
+[2026-06-15T02:01:00Z] [coder] [Deliverable] apps/web: package.json (@bi/web, React 18+react-router-dom+@tanstack/react-query+recharts+@radix-ui/*+@bi/contracts; devDeps vite/vitest/@vitejs/plugin-react/tailwindcss/testing-library), tsconfig.json, vite.config.ts, index.html, tailwind.config.ts (navy #1E3A6E primary, teal #0EA5A0 accent), postcss.config.js, src/index.css (@tailwind directives + CSS vars), src/main.tsx (QueryClientProvider+BrowserRouter), src/App.tsx (placeholder route renders BI Result Presenter), src/App.test.tsx (Vitest+Testing Library, 1 unit test), src/lib/api-client.ts+sse-client.ts stubs, vitest.config.ts+vitest.setup.ts
+[2026-06-15T02:01:00Z] [coder] [Verification] pnpm install: PASS (539 packages installed); turbo typecheck: PASS (3/3 packages); turbo lint: PASS (3/3 packages); turbo build: PASS (contracts tsc, api tsup, web vite); turbo test:unit: PASS (3/3 packages, 9 tests total: api=1, contracts=7, web=1)
+[2026-06-15T02:01:00Z] [coder] [Decision] tsconfig.base.json uses NodeNext for API; contracts+web use ESNext/Bundler moduleResolution (Vite+tsup handle bundling)
+[2026-06-15T02:01:00Z] [coder] [Decision] globals npm package added to root devDeps so ESLint flat config can declare node/browser environments
+[2026-06-15T02:01:00Z] [coder] [Deferred] Dockerfiles (T1.6); docker-compose (T1.7); CI pipeline real jobs (T1.5); full Prisma schema (T1.2); 11 web screens (T1.4); LLM adapter impl; datasource connectors; all feature modules
+[2026-06-15T02:01:00Z] [coder] [Finished] Skeleton complete; all 5 verification checks green; no git commands run
+[2026-06-15T02:12:40Z] [orchestrator] [Usage checkpoint] phase=agent-post agent=coder iteration=2
+[2026-06-15T02:12:40Z] [orchestrator] [Step 3 -> 4] scaffold skeleton -> real CI pipeline
+[2026-06-15T02:12:40Z] [orchestrator] [Usage checkpoint] phase=agent-pre agent=coder iteration=3 model=sonnet
+[2026-06-15T13:25:59Z] [orchestrator] [Usage checkpoint] phase=agent-post agent=coder iteration=3
+[2026-06-15T13:25:59Z] [orchestrator] [Step 4 verified] real CI pipeline (6 PR jobs + push-only e2e); local run green; integration/security pass via passWithNoTests
+[2026-06-15T13:25:59Z] [orchestrator] [Step 4 -> 5] real CI -> local dev infra (Dockerfiles + docker-compose)
+[2026-06-15T13:25:59Z] [orchestrator] [Usage checkpoint] phase=agent-pre agent=coder iteration=4 model=sonnet
+[2026-06-15T13:26:00Z] [coder] [Started] Bootstrap step 5: local dev infra — Dockerfiles + docker-compose (T1.6 + T1.7 subset)
+[2026-06-15T13:26:00Z] [coder] [Deliverable] apps/api/Dockerfile: multi-stage (builder=node:20-alpine with pnpm+frozen-lockfile+tsup build; runtime=node:20-alpine with pnpm prod deploy output; runs as USER node on port 3000)
+[2026-06-15T13:26:00Z] [coder] [Deliverable] apps/api/.dockerignore: excludes node_modules, dist, .env*, *.pem, *.key, coverage, test files
+[2026-06-15T13:26:00Z] [coder] [Deliverable] apps/web/Dockerfile: multi-stage (builder=node:20-alpine with pnpm+vite build; serve=nginx:alpine serving dist/ with SPA fallback via nginx.conf)
+[2026-06-15T13:26:00Z] [coder] [Deliverable] apps/web/.dockerignore: excludes node_modules, dist, .env*, *.pem, *.key, coverage, test files
+[2026-06-15T13:26:00Z] [coder] [Deliverable] apps/web/nginx.conf: minimal SPA routing config (try_files $uri $uri/ /index.html); aggressive caching on fingerprinted assets; no-cache on index.html
+[2026-06-15T13:26:00Z] [coder] [Deliverable] docker-compose.yml (repo root): services db (postgres:16-alpine, named volume, 127.0.0.1:5432, pg_isready healthcheck) + api (build apps/api/, env_file .env.local, depends_on db healthy, 127.0.0.1:3000) + migrate-seed (PLACEHOLDER: busybox one-shot logging TODOs, exits 0)
+[2026-06-15T13:26:00Z] [coder] [Deliverable] README.md (repo root): one-command dev flow (pnpm install, cp .env.example .env.local, docker compose up, pnpm --filter web dev); service map; tear-down; migrate-seed placeholder status
+[2026-06-15T13:26:00Z] [coder] [Verification] docker compose config: PASS (YAML valid, all services resolved, env vars interpolated from .env.example copy); API image build: Docker daemon unavailable in sandbox — dry-reviewed Dockerfile; pnpm build @bi/api locally: PASS (tsup dist/index.js produced); pnpm deploy production prune: PASS (83 prod deps pruned to /tmp/test-deploy)
+[2026-06-15T13:26:00Z] [coder] [Stub] migrate-seed is a busybox one-shot placeholder. Logs: '[migrate-seed] TODO: real migrations land in T1.2' and '[migrate-seed] TODO: tenant_demo provisioning lands in T8.1'. Wired for replacement: when T1.2 merges, change to api image + 'npx prisma migrate deploy'; when T8.1 merges, add provision-tenant.ts call. See docker-compose.yml comments.
+[2026-06-15T13:26:00Z] [coder] [Finished] Dockerfiles + docker-compose complete; no git commands run
+[2026-06-15T13:32:48Z] [orchestrator] [Usage checkpoint] phase=agent-post agent=coder iteration=4
+[2026-06-15T13:32:48Z] [orchestrator] [Step 5 verified] Dockerfiles+compose+nginx+README; docker compose config valid; API image build deferred (no daemon in subagent)
+[2026-06-15T13:32:48Z] [orchestrator] [Step 5 -> 6] dev infra -> tester smoke tests (unit/medium/e2e)
+[2026-06-15T13:32:48Z] [orchestrator] [Usage checkpoint] phase=agent-pre agent=tester iteration=1 model=sonnet
+[2026-06-15T13:45:00Z] [tester] [Started] Bootstrap step 6: verify test framework at all three levels; read KB conventions/testing.md + bootstrap-plan.md + existing configs
+[2026-06-15T13:45:00Z] [tester] [Level: unit] Confirmed existing unit tests green via `pnpm turbo run test:unit`; 9 tests across api(1)+contracts(7)+web(1); no new tests added (already green)
+[2026-06-15T13:45:00Z] [tester] [Level: integration] Created apps/api/src/health.integration.test.ts (Supertest, in-process Express, no DB); `pnpm turbo run test:integration` green (1 test); passWithNoTests preserved
+[2026-06-15T13:45:00Z] [tester] [Level: e2e] Added @playwright/test to apps/web devDeps; wrote apps/web/playwright.config.ts (webServer=vite preview, chromium); wrote apps/web/e2e/smoke.spec.ts (heading assertion); added test:e2e script to web package.json; wrote apps/web/tsconfig.e2e.json; installed chromium binary; `pnpm turbo run test:e2e` green (1 test)
+[2026-06-15T13:45:00Z] [tester] [PR pipeline] Full turbo run (lint+typecheck+test:unit+test:integration+test:security+build): 14/14 tasks successful; no regressions
+[2026-06-15T13:45:00Z] [tester] [Finished] All three test levels green; framework verified; no git commands run
+[2026-06-15T13:39:08Z] [orchestrator] [Usage checkpoint] phase=agent-post agent=tester iteration=1
+[2026-06-15T13:39:08Z] [orchestrator] [Step 6 verified] smoke tests green at 3 levels (unit/integration/e2e); ci.yml e2e job patched to install chromium
+[2026-06-15T13:39:08Z] [orchestrator] [Step 6 -> 7] tester -> monitor (dev logging + error sink)
+[2026-06-15T13:39:08Z] [orchestrator] [Usage checkpoint] phase=agent-pre agent=monitor iteration=1 model=opus
+[2026-06-15T13:39:59Z] [monitor] [Bootstrap obs start] Wiring dev-only pino logging + optional Sentry error sink into apps/api skeleton (bootstrap subset of epic-007)
+[2026-06-15T13:45:15Z] [monitor] [Bootstrap obs done] pino logger+pino-http+Sentry no-op sink+error middleware wired into apps/api; SENTRY_DSN added to .env.example; lint/typecheck/unit/integration/build/security all green
+[2026-06-15T13:46:50Z] [orchestrator] [Usage checkpoint] phase=agent-post agent=monitor iteration=1
+[2026-06-15T13:46:50Z] [orchestrator] [Step 7 -> 8] monitor -> review+fix loop (subroutine 11)

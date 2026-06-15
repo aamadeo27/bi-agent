@@ -1,0 +1,11 @@
+node_modules
+dist
+.turbo
+.env
+.env.*
+*.pem
+*.key
+coverage
+__tests__
+*.test.ts
+*.spec.ts

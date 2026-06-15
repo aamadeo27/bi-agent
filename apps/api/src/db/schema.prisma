@@ -1,0 +1,16 @@
+// TODO: T1.2 — full Prisma schema for the control plane
+// See: docs/kb/contracts.md §rbac-model §audit-event, docs/kb/tech-stack.md §"Prisma + the credential model"
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Placeholder model — replace with full schema in T1.2
+model _Placeholder {
+  id String @id @default(cuid())
+}

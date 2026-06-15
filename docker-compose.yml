@@ -1,0 +1,86 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Local development stack — brings up Postgres + API in one command.
+#
+# Usage:
+#   cp .env.example .env.local   # fill in DATABASE_URL, JWT secrets, etc.
+#   docker compose up            # starts db + api + migrate-seed
+#   pnpm --filter web dev        # in a second terminal (SPA with HMR)
+#
+# Web SPA is intentionally excluded from this compose file; Vite HMR is
+# faster on the host. Add it via `--profile full` in a future iteration.
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+
+  # ── Postgres control-plane DB ───────────────────────────────────────────────
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: bi_platform
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d bi_platform"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  # ── API (Express) ───────────────────────────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env.local
+    environment:
+      # Override DATABASE_URL so the API container resolves the db service by
+      # compose service name rather than `localhost` (which is the host value in
+      # .env.local and won't resolve inside the container network).
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/bi_platform
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  # ── Migrate + seed (one-shot placeholder) ───────────────────────────────────
+  # TODO(T1.2): Replace this placeholder with the real migration command once
+  # the full Prisma control-plane schema lands in T1.2:
+  #
+  #   command: >
+  #     sh -c "npx prisma migrate deploy &&
+  #            node dist/scripts/provision-tenant.js --name demo --admin-email admin@demo.example"
+  #
+  # The provision-tenant script (T8.1, deferred post-v1) will create the
+  # `tenant_demo` schema, apply DDL, seed the Admin role with can_inspect_query=ON.
+  #
+  # Until T1.2 ships the real schema, this service logs its TODO and exits 0 so
+  # `docker compose up` does not fail the stack.
+  migrate-seed:
+    image: busybox:latest
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+    command: >
+      sh -c "echo '[migrate-seed] TODO: real migrations land in T1.2 (prisma migrate deploy)' &&
+             echo '[migrate-seed] TODO: tenant_demo provisioning lands in T8.1 (provision-tenant.ts)' &&
+             echo '[migrate-seed] Placeholder exiting 0 — stack is safe to use.' &&
+             exit 0"
+
+volumes:
+  db_data:
+    driver: local

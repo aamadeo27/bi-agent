@@ -1,0 +1,11 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Design tokens — primary navy #1E3A6E, accent teal #0EA5A0 */
+    --color-primary: #1e3a6e;
+    --color-accent: #0ea5a0;
+  }
+}
