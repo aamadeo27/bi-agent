@@ -22,8 +22,8 @@ export default defineConfig({
   forbidOnly: !!process.env["CI"],
   /* No retries in local dev; 1 retry on CI for transient flakes */
   retries: process.env["CI"] ? 1 : 0,
-  /* Reporter: list in CI for clean log lines; default (list+html) locally */
-  reporter: process.env["CI"] ? "list" : "list",
+  /* Reporter: list in CI for clean log lines; html locally for interactive report */
+  reporter: process.env["CI"] ? "list" : "html",
   use: {
     /* Base URL matched to vite preview default port */
     baseURL: "http://localhost:4173",

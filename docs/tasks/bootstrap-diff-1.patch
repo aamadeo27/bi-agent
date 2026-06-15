@@ -1,0 +1,2670 @@
+diff --git a/.env.example b/.env.example
+new file mode 100644
+index 0000000..3f34562
+--- /dev/null
++++ b/.env.example
+@@ -0,0 +1,44 @@
++# BI Result Presenter — local dev environment template
++# Copy to .env.local and fill in real values before running.
++# NEVER commit .env.local or any file matching .env* (blocked by .gitignore).
++
++# Control-plane Postgres URL (Prisma)
++DATABASE_URL=postgresql://postgres:postgres@localhost:5432/bi_platform
++
++# Google Gemini API key
++GEMINI_API_KEY=your-gemini-api-key
++
++# JWT signing secrets — change before any real use
++JWT_ACCESS_SECRET=dev-access-secret-change-me
++JWT_REFRESH_SECRET=dev-refresh-secret-change-me
++
++# KMS key reference — use "local-test-key" in development (no-op stub)
++KMS_KEY_REF=local-test-key
++
++# Runtime
++NODE_ENV=development
++PORT=3000
++LOG_LEVEL=debug
++
++# LLM provider selection
++LLM_PROVIDER=gemini
++LLM_MODEL=gemini-1.5-flash
++
++# Result / chart thresholds (GAP-8)
++RESULT_ROW_CAP=10000
++CHART_DOWNGRADE_ROW_THRESHOLD=2000
++
++# Conversation history retention in days (GAP-4)
++HISTORY_RETENTION_DAYS=365
++
++# SPA → API base URL (non-secret; Vite exposes VITE_* vars to the browser)
++VITE_API_URL=http://localhost:3000
++
++# OpenTelemetry (optional; points at a local collector when running --profile observability)
++OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
++
++# Error-tracking sink (optional, dev-only bootstrap hook).
++# Leave UNSET to disable — the sink no-ops gracefully and errors still log via pino.
++# Set to a Sentry DSN (free tier) to capture unhandled errors locally.
++# Production alerting/release routing is epic-007 (T7.3/T7.4), NOT configured here.
++# SENTRY_DSN=https://<key>@<org>.ingest.sentry.io/<project>
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+new file mode 100644
+index 0000000..bd35985
+--- /dev/null
++++ b/.github/workflows/ci.yml
+@@ -0,0 +1,153 @@
++name: CI
++
++on:
++  pull_request:
++    branches: ["**"]
++  push:
++    branches: [main]
++
++env:
++  TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
++  TURBO_TEAM: ${{ vars.TURBO_TEAM }}
++
++jobs:
++  lint:
++    name: lint
++    runs-on: ubuntu-latest
++    steps:
++      - uses: actions/checkout@v4
++
++      - uses: pnpm/action-setup@v4
++        with:
++          version: 9
++
++      - uses: actions/setup-node@v4
++        with:
++          node-version: 20
++          cache: pnpm
++
++      - run: pnpm install --frozen-lockfile
++
++      - run: pnpm turbo run lint
++
++  typecheck:
++    name: typecheck
++    runs-on: ubuntu-latest
++    steps:
++      - uses: actions/checkout@v4
++
++      - uses: pnpm/action-setup@v4
++        with:
++          version: 9
++
++      - uses: actions/setup-node@v4
++        with:
++          node-version: 20
++          cache: pnpm
++
++      - run: pnpm install --frozen-lockfile
++
++      - run: pnpm turbo run typecheck
++
++  unit:
++    name: unit
++    runs-on: ubuntu-latest
++    needs: [typecheck]
++    steps:
++      - uses: actions/checkout@v4
++
++      - uses: pnpm/action-setup@v4
++        with:
++          version: 9
++
++      - uses: actions/setup-node@v4
++        with:
++          node-version: 20
++          cache: pnpm
++
++      - run: pnpm install --frozen-lockfile
++
++      - run: pnpm turbo run test:unit
++
++  integration:
++    name: integration
++    runs-on: ubuntu-latest
++    needs: [typecheck]
++    steps:
++      - uses: actions/checkout@v4
++
++      - uses: pnpm/action-setup@v4
++        with:
++          version: 9
++
++      - uses: actions/setup-node@v4
++        with:
++          node-version: 20
++          cache: pnpm
++
++      - run: pnpm install --frozen-lockfile
++
++      - run: pnpm turbo run test:integration
++
++  build:
++    name: build
++    runs-on: ubuntu-latest
++    needs: [typecheck, lint]
++    steps:
++      - uses: actions/checkout@v4
++
++      - uses: pnpm/action-setup@v4
++        with:
++          version: 9
++
++      - uses: actions/setup-node@v4
++        with:
++          node-version: 20
++          cache: pnpm
++
++      - run: pnpm install --frozen-lockfile
++
++      - run: pnpm turbo run build
++
++  security-tests:
++    name: security-tests
++    runs-on: ubuntu-latest
++    needs: [typecheck]
++    steps:
++      - uses: actions/checkout@v4
++
++      - uses: pnpm/action-setup@v4
++        with:
++          version: 9
++
++      - uses: actions/setup-node@v4
++        with:
++          node-version: 20
++          cache: pnpm
++
++      - run: pnpm install --frozen-lockfile
++
++      - run: pnpm turbo run test:security
++
++  e2e:
++    name: e2e
++    runs-on: ubuntu-latest
++    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
++    needs: [lint, typecheck, unit, integration, build, security-tests]
++    steps:
++      - uses: actions/checkout@v4
++
++      - uses: pnpm/action-setup@v4
++        with:
++          version: 9
++
++      - uses: actions/setup-node@v4
++        with:
++          node-version: 20
++          cache: pnpm
++
++      - run: pnpm install --frozen-lockfile
++
++      - run: pnpm --filter @bi/web exec playwright install --with-deps chromium
++
++      - run: pnpm turbo run test:e2e
+diff --git a/.gitignore b/.gitignore
+index c9c2fd9..f3ecac6 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -4,3 +4,47 @@
+ 
+ # DevTeam config — not tracked per-machine
+ .devteam/
++
++# Dependencies
++node_modules/
++
++# Build outputs
++dist/
++build/
++.turbo/
++apps/web/dist/
++apps/web/.vite/
++*.tsbuildinfo
++
++# Env / secrets — .env.example IS committed; all others are not
++.env
++.env.local
++.env.*.local
++*.pem
++*.key
++
++# Prisma — migrations ARE committed; local SQLite DBs are not
++prisma/*.db
++
++# Test / coverage
++coverage/
++playwright-report/
++test-results/
++
++# Logs — DevTeam.log IS committed; tool-specific debug logs are not
++npm-debug.log*
++pnpm-debug.log*
++logs/
++
++# IaC local state (Epic 008, deferred)
++*.tfstate
++*.tfstate.*
++.terraform/
++*.tfvars
++
++# OS / editor junk
++.DS_Store
++Thumbs.db
++.idea/
++.vscode/*
++!.vscode/extensions.json
+diff --git a/.prettierrc b/.prettierrc
+new file mode 100644
+index 0000000..5414ccd
+--- /dev/null
++++ b/.prettierrc
+@@ -0,0 +1,8 @@
++{
++  "semi": true,
++  "singleQuote": false,
++  "tabWidth": 2,
++  "trailingComma": "es5",
++  "printWidth": 100,
++  "arrowParens": "always"
++}
+diff --git a/DevTeam.log b/DevTeam.log
+index 758a6c6..6026461 100644
+--- a/DevTeam.log
++++ b/DevTeam.log
+@@ -80,3 +80,74 @@
+ [2026-06-14T23:59:12Z] [orchestrator] [Usage checkpoint] phase=sequence-end sequence=pre-project
+ [2026-06-14T23:59:12Z] [orchestrator] [Model usage summary] sequence=pre-project haiku=1 sonnet=3 opus=4 haiku-skipped=0
+ [2026-06-14T23:59:12Z] [orchestrator] [Sequence done] pre-project
++[2026-06-15T00:44:11Z] [orchestrator] [Task-id convention] adopted globally-unique T<epic>.<task> stems; 40 files renamed (git mv), all refs/deps/waves/branching.md/devops.md/monitoring.md updated; commit-msg hook (user-updated) + post-merge resolver now consistent; amended bootstrap -> e6f25f5 (--no-verify, user-authorized scaffolding exception)
++[2026-06-15T00:59:30Z] [orchestrator] [Sequence started] bootstrap mode=autonomous
++[2026-06-15T00:59:30Z] [orchestrator] [Usage checkpoint] phase=sequence-start sequence=bootstrap
++[2026-06-15T01:05:50Z] [orchestrator] [Config] run=autonomous repo=bi-agent owner=aamadeo27 visibility=public
++[2026-06-15T01:05:50Z] [orchestrator] [Usage checkpoint] phase=agent-pre agent=gf_devops-engineer iteration=1 model=sonnet
++[2026-06-15T01:10:00Z] [gf_devops-engineer] [Started] Bootstrap confirmation pass: reading devops.md, tech-stack.md, conventions, epic 001 tasks
++[2026-06-15T01:12:30Z] [gf_devops-engineer] [Deliverable] Wrote docs/kb/bootstrap-plan.md: monorepo tree, local dev flow, turbo task graph, scaffold order, 5 flagged conflicts
++[2026-06-15T01:12:45Z] [gf_devops-engineer] [KB updated] Added bootstrap-plan.md to docs/kb/README.md index
++[2026-06-15T01:12:50Z] [gf_devops-engineer] [No conflicts blocking] 5 minor conflicts resolved; no task changes required; scaffold order confirmed
++[2026-06-15T01:13:00Z] [gf_devops-engineer] [Finished] Bootstrap dev-infra confirmation complete; ready for coder
++[2026-06-15T01:11:08Z] [orchestrator] [Usage checkpoint] phase=agent-post agent=gf_devops-engineer iteration=1
++[2026-06-15T01:11:08Z] [orchestrator] [BLOCKER] bootstrap step 2 needs agents coder/tester/basic-reviewer; none defined in .claude/agents nor available as subagent types; paused for user decision
++[2026-06-15T01:35:42Z] [orchestrator] [Blocker resolving] coder/tester/basic-reviewer(+conflict-resolver) now present on disk but not registered this session; user to reload window then re-run /sequence bootstrap
++[2026-06-15T01:35:42Z] [orchestrator] [Sequence paused] bootstrap awaiting window reload to register new agents (resume at step 2; step 1 bootstrap-plan.md saved)
++[2026-06-15T01:56:52Z] [orchestrator] [Sequence resumed] bootstrap after window reload; agents registered; resuming at step 2
++[2026-06-15T01:56:52Z] [orchestrator] [Step 1 -> 2] devops dev-infra confirm -> repo init + CI stub
++[2026-06-15T01:57:38Z] [orchestrator] [Usage checkpoint] phase=agent-pre agent=coder iteration=1 model=sonnet
++[2026-06-15T01:57:38Z] [coder] [Started] Bootstrap step 2: writing .gitignore and .github/workflows/ci.yml; no git ops
++[2026-06-15T01:57:38Z] [coder] [Deliverable] .gitignore: extended existing file with pnpm+Turborepo+Node/TS+Vite+Prisma ignores; DevTeam.log and .env.example remain tracked
++[2026-06-15T01:57:38Z] [coder] [Deliverable] .github/workflows/ci.yml: minimal passing stub (echo placeholder); triggers push+pull_request
++[2026-06-15T01:57:38Z] [coder] [Finished] Two files written; no git commands run; no commits; no tests (stub files only)
++[2026-06-15T02:00:22Z] [orchestrator] [Usage checkpoint] phase=agent-post agent=coder iteration=1
++[2026-06-15T02:00:22Z] [orchestrator] [Repo created] https://github.com/aamadeo27/bi-agent public; main pushed; commit 6ef8166 chore: initialize repo
++[2026-06-15T02:00:22Z] [orchestrator] [Step 2 -> 3] repo init -> scaffold project skeleton
++[2026-06-15T02:00:49Z] [orchestrator] [Usage checkpoint] phase=agent-pre agent=coder iteration=2 model=sonnet
++[2026-06-15T02:01:00Z] [coder] [Started] Bootstrap step 3: scaffold empty-but-correct project skeleton; no business logic
++[2026-06-15T02:01:00Z] [coder] [Deliverable] Root: package.json (private, type=module, pnpm workspaces), pnpm-workspace.yaml, turbo.json (lint/typecheck/test:unit/test:integration/test:security/build/test:e2e), tsconfig.base.json (strict), eslint.config.js (flat config, globals-aware, no-llm-sdk-outside-adapters rule), .prettierrc, .env.example (all 15 env vars from bootstrap-plan.md §2)
++[2026-06-15T02:01:00Z] [coder] [Deliverable] packages/contracts: package.json (@bi/contracts), tsconfig.json, src/index.ts re-exporting 7 stub modules (chat.ts, rbac.ts, audit.ts, auth.ts, permission-block.ts, generated-query.ts, error-codes.ts); minimal Zod schemas + inferred types; src/index.test.ts (7 Vitest unit tests for schema stubs)
++[2026-06-15T02:01:00Z] [coder] [Deliverable] apps/api: package.json (@bi/api, express+zod+pino+@bi/contracts; devDeps tsup/vitest/supertest/tsx/typescript), tsconfig.json, src/index.ts (Express app, GET /health returns {status:'ok'}), src/health.test.ts (Vitest+Supertest, 1 unit test), 9 stub module dirs (auth/rbac/admin/ask/llm/datasource/conversations/audit/tenant/db), llm/port.ts+factory.ts+adapters/gemini.ts stubs, db/schema.prisma placeholder, vitest.config.ts
++[2026-06-15T02:01:00Z] [coder] [Deliverable] apps/web: package.json (@bi/web, React 18+react-router-dom+@tanstack/react-query+recharts+@radix-ui/*+@bi/contracts; devDeps vite/vitest/@vitejs/plugin-react/tailwindcss/testing-library), tsconfig.json, vite.config.ts, index.html, tailwind.config.ts (navy #1E3A6E primary, teal #0EA5A0 accent), postcss.config.js, src/index.css (@tailwind directives + CSS vars), src/main.tsx (QueryClientProvider+BrowserRouter), src/App.tsx (placeholder route renders BI Result Presenter), src/App.test.tsx (Vitest+Testing Library, 1 unit test), src/lib/api-client.ts+sse-client.ts stubs, vitest.config.ts+vitest.setup.ts
++[2026-06-15T02:01:00Z] [coder] [Verification] pnpm install: PASS (539 packages installed); turbo typecheck: PASS (3/3 packages); turbo lint: PASS (3/3 packages); turbo build: PASS (contracts tsc, api tsup, web vite); turbo test:unit: PASS (3/3 packages, 9 tests total: api=1, contracts=7, web=1)
++[2026-06-15T02:01:00Z] [coder] [Decision] tsconfig.base.json uses NodeNext for API; contracts+web use ESNext/Bundler moduleResolution (Vite+tsup handle bundling)
++[2026-06-15T02:01:00Z] [coder] [Decision] globals npm package added to root devDeps so ESLint flat config can declare node/browser environments
++[2026-06-15T02:01:00Z] [coder] [Deferred] Dockerfiles (T1.6); docker-compose (T1.7); CI pipeline real jobs (T1.5); full Prisma schema (T1.2); 11 web screens (T1.4); LLM adapter impl; datasource connectors; all feature modules
++[2026-06-15T02:01:00Z] [coder] [Finished] Skeleton complete; all 5 verification checks green; no git commands run
++[2026-06-15T02:12:40Z] [orchestrator] [Usage checkpoint] phase=agent-post agent=coder iteration=2
++[2026-06-15T02:12:40Z] [orchestrator] [Step 3 -> 4] scaffold skeleton -> real CI pipeline
++[2026-06-15T02:12:40Z] [orchestrator] [Usage checkpoint] phase=agent-pre agent=coder iteration=3 model=sonnet
++[2026-06-15T13:25:59Z] [orchestrator] [Usage checkpoint] phase=agent-post agent=coder iteration=3
++[2026-06-15T13:25:59Z] [orchestrator] [Step 4 verified] real CI pipeline (6 PR jobs + push-only e2e); local run green; integration/security pass via passWithNoTests
++[2026-06-15T13:25:59Z] [orchestrator] [Step 4 -> 5] real CI -> local dev infra (Dockerfiles + docker-compose)
++[2026-06-15T13:25:59Z] [orchestrator] [Usage checkpoint] phase=agent-pre agent=coder iteration=4 model=sonnet
++[2026-06-15T13:26:00Z] [coder] [Started] Bootstrap step 5: local dev infra — Dockerfiles + docker-compose (T1.6 + T1.7 subset)
++[2026-06-15T13:26:00Z] [coder] [Deliverable] apps/api/Dockerfile: multi-stage (builder=node:20-alpine with pnpm+frozen-lockfile+tsup build; runtime=node:20-alpine with pnpm prod deploy output; runs as USER node on port 3000)
++[2026-06-15T13:26:00Z] [coder] [Deliverable] apps/api/.dockerignore: excludes node_modules, dist, .env*, *.pem, *.key, coverage, test files
++[2026-06-15T13:26:00Z] [coder] [Deliverable] apps/web/Dockerfile: multi-stage (builder=node:20-alpine with pnpm+vite build; serve=nginx:alpine serving dist/ with SPA fallback via nginx.conf)
++[2026-06-15T13:26:00Z] [coder] [Deliverable] apps/web/.dockerignore: excludes node_modules, dist, .env*, *.pem, *.key, coverage, test files
++[2026-06-15T13:26:00Z] [coder] [Deliverable] apps/web/nginx.conf: minimal SPA routing config (try_files $uri $uri/ /index.html); aggressive caching on fingerprinted assets; no-cache on index.html
++[2026-06-15T13:26:00Z] [coder] [Deliverable] docker-compose.yml (repo root): services db (postgres:16-alpine, named volume, 127.0.0.1:5432, pg_isready healthcheck) + api (build apps/api/, env_file .env.local, depends_on db healthy, 127.0.0.1:3000) + migrate-seed (PLACEHOLDER: busybox one-shot logging TODOs, exits 0)
++[2026-06-15T13:26:00Z] [coder] [Deliverable] README.md (repo root): one-command dev flow (pnpm install, cp .env.example .env.local, docker compose up, pnpm --filter web dev); service map; tear-down; migrate-seed placeholder status
++[2026-06-15T13:26:00Z] [coder] [Verification] docker compose config: PASS (YAML valid, all services resolved, env vars interpolated from .env.example copy); API image build: Docker daemon unavailable in sandbox — dry-reviewed Dockerfile; pnpm build @bi/api locally: PASS (tsup dist/index.js produced); pnpm deploy production prune: PASS (83 prod deps pruned to /tmp/test-deploy)
++[2026-06-15T13:26:00Z] [coder] [Stub] migrate-seed is a busybox one-shot placeholder. Logs: '[migrate-seed] TODO: real migrations land in T1.2' and '[migrate-seed] TODO: tenant_demo provisioning lands in T8.1'. Wired for replacement: when T1.2 merges, change to api image + 'npx prisma migrate deploy'; when T8.1 merges, add provision-tenant.ts call. See docker-compose.yml comments.
++[2026-06-15T13:26:00Z] [coder] [Finished] Dockerfiles + docker-compose complete; no git commands run
++[2026-06-15T13:32:48Z] [orchestrator] [Usage checkpoint] phase=agent-post agent=coder iteration=4
++[2026-06-15T13:32:48Z] [orchestrator] [Step 5 verified] Dockerfiles+compose+nginx+README; docker compose config valid; API image build deferred (no daemon in subagent)
++[2026-06-15T13:32:48Z] [orchestrator] [Step 5 -> 6] dev infra -> tester smoke tests (unit/medium/e2e)
++[2026-06-15T13:32:48Z] [orchestrator] [Usage checkpoint] phase=agent-pre agent=tester iteration=1 model=sonnet
++[2026-06-15T13:45:00Z] [tester] [Started] Bootstrap step 6: verify test framework at all three levels; read KB conventions/testing.md + bootstrap-plan.md + existing configs
++[2026-06-15T13:45:00Z] [tester] [Level: unit] Confirmed existing unit tests green via `pnpm turbo run test:unit`; 9 tests across api(1)+contracts(7)+web(1); no new tests added (already green)
++[2026-06-15T13:45:00Z] [tester] [Level: integration] Created apps/api/src/health.integration.test.ts (Supertest, in-process Express, no DB); `pnpm turbo run test:integration` green (1 test); passWithNoTests preserved
++[2026-06-15T13:45:00Z] [tester] [Level: e2e] Added @playwright/test to apps/web devDeps; wrote apps/web/playwright.config.ts (webServer=vite preview, chromium); wrote apps/web/e2e/smoke.spec.ts (heading assertion); added test:e2e script to web package.json; wrote apps/web/tsconfig.e2e.json; installed chromium binary; `pnpm turbo run test:e2e` green (1 test)
++[2026-06-15T13:45:00Z] [tester] [PR pipeline] Full turbo run (lint+typecheck+test:unit+test:integration+test:security+build): 14/14 tasks successful; no regressions
++[2026-06-15T13:45:00Z] [tester] [Finished] All three test levels green; framework verified; no git commands run
++[2026-06-15T13:39:08Z] [orchestrator] [Usage checkpoint] phase=agent-post agent=tester iteration=1
++[2026-06-15T13:39:08Z] [orchestrator] [Step 6 verified] smoke tests green at 3 levels (unit/integration/e2e); ci.yml e2e job patched to install chromium
++[2026-06-15T13:39:08Z] [orchestrator] [Step 6 -> 7] tester -> monitor (dev logging + error sink)
++[2026-06-15T13:39:08Z] [orchestrator] [Usage checkpoint] phase=agent-pre agent=monitor iteration=1 model=opus
++[2026-06-15T13:39:59Z] [monitor] [Bootstrap obs start] Wiring dev-only pino logging + optional Sentry error sink into apps/api skeleton (bootstrap subset of epic-007)
++[2026-06-15T13:45:15Z] [monitor] [Bootstrap obs done] pino logger+pino-http+Sentry no-op sink+error middleware wired into apps/api; SENTRY_DSN added to .env.example; lint/typecheck/unit/integration/build/security all green
++[2026-06-15T13:46:50Z] [orchestrator] [Usage checkpoint] phase=agent-post agent=monitor iteration=1
++[2026-06-15T13:46:50Z] [orchestrator] [Step 7 -> 8] monitor -> review+fix loop (subroutine 11)
+diff --git a/README.md b/README.md
+new file mode 100644
+index 0000000..91da986
+--- /dev/null
++++ b/README.md
+@@ -0,0 +1,68 @@
++# BI Result Presenter
++
++A multi-tenant BI assistant that lets analysts query connected data sources in plain language and receive SQL-backed results rendered as charts or tables.
++
++## Local dev quick-start
++
++### Prerequisites
++
++- [Docker](https://docs.docker.com/get-docker/) (with Compose v2)
++- [Node.js](https://nodejs.org/) >= 20
++- [pnpm](https://pnpm.io/installation) >= 9
++
++### One-command setup
++
++```sh
++# 1. Install all workspace dependencies
++pnpm install
++
++# 2. Copy env template and fill in local values
++cp .env.example .env.local
++# Edit .env.local — at minimum set DATABASE_URL, JWT_ACCESS_SECRET,
++# JWT_REFRESH_SECRET, KMS_KEY_REF (use "local-test-key" stub), GEMINI_API_KEY
++
++# 3. Start Postgres + API (migrate-seed runs automatically, then exits)
++docker compose up
++
++# 4. In a second terminal — start the Vite dev server (fast HMR)
++pnpm --filter web dev
++```
++
++The SPA is available at `http://localhost:5173` and talks to the API at `http://localhost:3000`.
++
++### Tear down
++
++```sh
++docker compose down -v   # removes containers and the db_data volume
++```
++
++### Service map
++
++| Service | URL | Notes |
++|---------|-----|-------|
++| API (Express) | http://localhost:3000 | `GET /health` returns `{"status":"ok"}` |
++| Postgres | localhost:5432 | bound to 127.0.0.1 only; db `bi_platform` |
++| SPA (Vite) | http://localhost:5173 | host process, not in compose |
++
++### Migrate + seed status
++
++The `migrate-seed` service is a **placeholder** until T1.2 (Prisma control-plane schema) lands. It logs a TODO and exits 0. Once T1.2 is merged the compose file will be updated to run:
++
++```sh
++npx prisma migrate deploy
++node dist/scripts/provision-tenant.js --name demo --admin-email admin@demo.example
++```
++
++### Environment variables
++
++See `.env.example` for the full list of required variables and their descriptions. Copy to `.env.local` before running `docker compose up`.
++
++### Building Docker images manually
++
++```sh
++# API image (from repo root)
++docker build -f apps/api/Dockerfile -t bi-api .
++
++# Web image (from repo root)
++docker build -f apps/web/Dockerfile -t bi-web .
++```
+diff --git a/apps/api/.dockerignore b/apps/api/.dockerignore
+new file mode 100644
+index 0000000..f58c41d
+--- /dev/null
++++ b/apps/api/.dockerignore
+@@ -0,0 +1,11 @@
++node_modules
++dist
++.turbo
++.env
++.env.*
++*.pem
++*.key
++coverage
++__tests__
++*.test.ts
++*.spec.ts
+diff --git a/apps/api/Dockerfile b/apps/api/Dockerfile
+new file mode 100644
+index 0000000..63fa903
+--- /dev/null
++++ b/apps/api/Dockerfile
+@@ -0,0 +1,46 @@
++# ── Stage 1: builder ───────────────────────────────────────────────────────────
++FROM node:20-alpine AS builder
++
++WORKDIR /build
++
++# Install pnpm via corepack (ships with Node 20)
++RUN corepack enable && corepack prepare pnpm@latest --activate
++
++# Copy workspace manifests first so package installs are cached when only source
++# files change.
++COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
++COPY packages/contracts/package.json packages/contracts/
++COPY apps/api/package.json apps/api/
++
++# Install all deps (including devDependencies needed for the build step)
++RUN pnpm install --frozen-lockfile
++
++# Copy the rest of the monorepo source needed to build the API
++COPY tsconfig.base.json ./
++COPY packages/contracts/ packages/contracts/
++COPY apps/api/ apps/api/
++
++# Build the API (tsup produces dist/index.js)
++RUN pnpm --filter @bi/api build
++
++# Prune to production-only node_modules so the runtime stage stays lean
++RUN pnpm --filter @bi/api --prod deploy /prod/api
++
++
++# ── Stage 2: runtime ───────────────────────────────────────────────────────────
++FROM node:20-alpine AS runtime
++
++WORKDIR /app
++
++# Copy production-pruned node_modules from the builder's deploy output
++COPY --from=builder /prod/api/node_modules ./node_modules
++
++# Copy compiled output
++COPY --from=builder /build/apps/api/dist ./dist
++
++# The node user (uid 1000) ships with the official node:alpine image
++USER node
++
++EXPOSE 3000
++
++CMD ["node", "dist/index.js"]
+diff --git a/apps/api/package.json b/apps/api/package.json
+new file mode 100644
+index 0000000..d0ef7e5
+--- /dev/null
++++ b/apps/api/package.json
+@@ -0,0 +1,35 @@
++{
++  "name": "@bi/api",
++  "version": "0.1.0",
++  "private": true,
++  "type": "module",
++  "main": "./dist/index.js",
++  "scripts": {
++    "dev": "tsx watch src/index.ts",
++    "build": "tsup src/index.ts --format esm --dts --out-dir dist",
++    "typecheck": "tsc --noEmit",
++    "lint": "eslint src --ext .ts",
++    "test:unit": "vitest run --reporter=verbose",
++    "test:integration": "vitest run --config vitest.integration.config.ts",
++    "test:security": "vitest run --config vitest.security.config.ts"
++  },
++  "dependencies": {
++    "@bi/contracts": "workspace:*",
++    "@sentry/node": "^10.58.0",
++    "express": "^4.21.1",
++    "pino": "^9.5.0",
++    "pino-http": "^11.0.0",
++    "zod": "^3.23.8"
++  },
++  "devDependencies": {
++    "@types/express": "^5.0.0",
++    "@types/node": "^20.16.11",
++    "@types/supertest": "^6.0.2",
++    "pino-pretty": "^13.1.3",
++    "supertest": "^7.0.0",
++    "tsup": "^8.3.5",
++    "tsx": "^4.19.2",
++    "typescript": "^5.6.3",
++    "vitest": "^2.1.4"
++  }
++}
+diff --git a/apps/api/src/admin/index.ts b/apps/api/src/admin/index.ts
+new file mode 100644
+index 0000000..13314a6
+--- /dev/null
++++ b/apps/api/src/admin/index.ts
+@@ -0,0 +1,3 @@
++// TODO: admin route handlers for roles, users, data-sources, audit
++// See: docs/kb/contracts.md §rbac-model §audit-event
++export {};
+diff --git a/apps/api/src/ask/index.ts b/apps/api/src/ask/index.ts
+new file mode 100644
+index 0000000..a3ead96
+--- /dev/null
++++ b/apps/api/src/ask/index.ts
+@@ -0,0 +1,3 @@
++// TODO: ask pipeline — permission gate, query validator, LLM orchestrator, SSE response
++// See: docs/kb/patterns.md §permission-gate, §streaming-sse, docs/kb/common-pitfalls.md
++export {};
+diff --git a/apps/api/src/audit/index.ts b/apps/api/src/audit/index.ts
+new file mode 100644
+index 0000000..3afd4ab
+--- /dev/null
++++ b/apps/api/src/audit/index.ts
+@@ -0,0 +1,3 @@
++// TODO: audit log writer — persists AuditEvent on every query/admin action (GAP-9)
++// See: docs/kb/contracts.md §audit-event
++export {};
+diff --git a/apps/api/src/auth/index.ts b/apps/api/src/auth/index.ts
+new file mode 100644
+index 0000000..93c5628
+--- /dev/null
++++ b/apps/api/src/auth/index.ts
+@@ -0,0 +1,3 @@
++// TODO: T1.2+ — identity, sessions, SSO/OIDC, invite flow
++// See: docs/kb/contracts.md §auth-api, docs/kb/patterns.md §auth-flow
++export {};
+diff --git a/apps/api/src/conversations/index.ts b/apps/api/src/conversations/index.ts
+new file mode 100644
+index 0000000..ec9fb8e
+--- /dev/null
++++ b/apps/api/src/conversations/index.ts
+@@ -0,0 +1,3 @@
++// TODO: conversation history storage + 365-day retention purge job (GAP-4)
++// See: docs/kb/contracts.md §chat-api
++export {};
+diff --git a/apps/api/src/datasource/index.ts b/apps/api/src/datasource/index.ts
+new file mode 100644
+index 0000000..0adcb1a
+--- /dev/null
++++ b/apps/api/src/datasource/index.ts
+@@ -0,0 +1,3 @@
++// TODO: connectors (pg/mysql2/bigquery/undici) + query proxy + credential vault
++// See: docs/kb/tech-stack.md §"Prisma + the credential model", docs/kb/common-pitfalls.md
++export {};
+diff --git a/apps/api/src/db/schema.prisma b/apps/api/src/db/schema.prisma
+new file mode 100644
+index 0000000..c0f7c64
+--- /dev/null
++++ b/apps/api/src/db/schema.prisma
+@@ -0,0 +1,16 @@
++// TODO: T1.2 — full Prisma schema for the control plane
++// See: docs/kb/contracts.md §rbac-model §audit-event, docs/kb/tech-stack.md §"Prisma + the credential model"
++
++generator client {
++  provider = "prisma-client-js"
++}
++
++datasource db {
++  provider = "postgresql"
++  url      = env("DATABASE_URL")
++}
++
++// Placeholder model — replace with full schema in T1.2
++model _Placeholder {
++  id String @id @default(cuid())
++}
+diff --git a/apps/api/src/health.integration.test.ts b/apps/api/src/health.integration.test.ts
+new file mode 100644
+index 0000000..65b24cc
+--- /dev/null
++++ b/apps/api/src/health.integration.test.ts
+@@ -0,0 +1,19 @@
++import { describe, it, expect } from "vitest";
++import request from "supertest";
++import { app } from "./index.js";
++
++/**
++ * Integration smoke test — boots the Express app in-process and
++ * asserts the /health endpoint contract via Supertest (real HTTP
++ * handler chain; no mocks).
++ *
++ * No database is touched here; the health endpoint is intentionally
++ * stateless in the bootstrap scaffold (DB ping is deferred to T1.2).
++ */
++describe("integration: GET /health", () => {
++  it("returns 200 with {status:'ok'}", async () => {
++    const res = await request(app).get("/health");
++    expect(res.status).toBe(200);
++    expect(res.body).toEqual({ status: "ok" });
++  });
++});
+diff --git a/apps/api/src/health.test.ts b/apps/api/src/health.test.ts
+new file mode 100644
+index 0000000..94fe158
+--- /dev/null
++++ b/apps/api/src/health.test.ts
+@@ -0,0 +1,11 @@
++import { describe, it, expect } from "vitest";
++import request from "supertest";
++import { app } from "./index.js";
++
++describe("GET /health", () => {
++  it("returns 200 with status ok", async () => {
++    const res = await request(app).get("/health");
++    expect(res.status).toBe(200);
++    expect(res.body).toEqual({ status: "ok" });
++  });
++});
+diff --git a/apps/api/src/index.ts b/apps/api/src/index.ts
+new file mode 100644
+index 0000000..68bd173
+--- /dev/null
++++ b/apps/api/src/index.ts
+@@ -0,0 +1,34 @@
++import express, { type Express } from "express";
++import { logger } from "./observability/logger.js";
++import { httpLogger } from "./observability/http-logger.js";
++import { errorHandler } from "./observability/error-middleware.js";
++import { initErrorSink } from "./observability/error-sink.js";
++
++// Initialize the dev-only error-tracking sink. No-ops gracefully when
++// SENTRY_DSN is unset (the default in dev/bootstrap) — see error-sink.ts.
++initErrorSink();
++
++const app: Express = express();
++
++// HTTP request logging: method/path/status/latency, no bodies/secrets (see http-logger.ts).
++app.use(httpLogger);
++
++app.use(express.json());
++
++app.get("/health", (_req, res) => {
++  // TODO: add control-plane DB ping (Prisma) before v1 launch
++  res.json({ status: "ok" });
++});
++
++// Error-handling middleware MUST be registered last (after all routes).
++app.use(errorHandler);
++
++const port = Number(process.env["PORT"] ?? 3000);
++
++if (process.env["NODE_ENV"] !== "test") {
++  app.listen(port, () => {
++    logger.info({ port }, "API listening");
++  });
++}
++
++export { app };
+diff --git a/apps/api/src/llm/adapters/gemini.ts b/apps/api/src/llm/adapters/gemini.ts
+new file mode 100644
+index 0000000..62cc6ee
+--- /dev/null
++++ b/apps/api/src/llm/adapters/gemini.ts
+@@ -0,0 +1,9 @@
++// @google/genai import is ONLY permitted in this file (see ESLint rule no-llm-sdk-outside-adapters)
++// TODO: implement Gemini adapter — see docs/kb/patterns.md §provider-abstraction
++import type { LlmProvider } from "../port.js";
++
++export class GeminiAdapter implements LlmProvider {
++  async generateSql(_prompt: string): Promise<string> {
++    throw new Error("GeminiAdapter not yet implemented");
++  }
++}
+diff --git a/apps/api/src/llm/factory.ts b/apps/api/src/llm/factory.ts
+new file mode 100644
+index 0000000..8a42625
+--- /dev/null
++++ b/apps/api/src/llm/factory.ts
+@@ -0,0 +1,6 @@
++// TODO: instantiate the correct LlmProvider from LLM_PROVIDER env var
++import type { LlmProvider } from "./port.js";
++
++export function createLlmProvider(): LlmProvider {
++  throw new Error("LlmProvider factory not yet implemented — see T1.x");
++}
+diff --git a/apps/api/src/llm/port.ts b/apps/api/src/llm/port.ts
+new file mode 100644
+index 0000000..4e19b38
+--- /dev/null
++++ b/apps/api/src/llm/port.ts
+@@ -0,0 +1,5 @@
++// TODO: LlmProvider interface — full definition in docs/kb/patterns.md §provider-abstraction
++export interface LlmProvider {
++  // Placeholder — to be expanded when LLM pipeline is implemented
++  generateSql(prompt: string): Promise<string>;
++}
+diff --git a/apps/api/src/observability/error-middleware.ts b/apps/api/src/observability/error-middleware.ts
+new file mode 100644
+index 0000000..90b1a93
+--- /dev/null
++++ b/apps/api/src/observability/error-middleware.ts
+@@ -0,0 +1,39 @@
++import type { ErrorRequestHandler, Request, Response, NextFunction } from "express";
++import { logger } from "./logger.js";
++import { captureError } from "./error-sink.js";
++
++/**
++ * Express error-handling middleware (must be registered LAST).
++ *
++ * - Logs the error via pino (full detail server-side, including stack).
++ * - Forwards it to the error sink when one is enabled (no-op otherwise).
++ * - Returns a safe JSON error shape to the client: no stack, no internal
++ *   message leakage.
++ *
++ * TODO(epic-007 / T7.3): map onto the contracts `error-codes` taxonomy
++ * (GATE_BLOCK / VALIDATION / DATA_SOURCE / LLM_ERROR / ...) and emit
++ * `app.error.count{error_code,class}` (monitoring.md §1.4). For the bootstrap
++ * skeleton every unhandled error is treated as INTERNAL.
++ */
++export const errorHandler: ErrorRequestHandler = (
++  err: unknown,
++  _req: Request,
++  res: Response,
++  next: NextFunction,
++) => {
++  // If headers are already sent, defer to Express's default handler.
++  if (res.headersSent) {
++    next(err);
++    return;
++  }
++
++  logger.error({ err }, "unhandled request error");
++  captureError(err);
++
++  res.status(500).json({
++    error: {
++      code: "INTERNAL",
++      message: "Internal server error",
++    },
++  });
++};
+diff --git a/apps/api/src/observability/error-sink.ts b/apps/api/src/observability/error-sink.ts
+new file mode 100644
+index 0000000..1578f85
+--- /dev/null
++++ b/apps/api/src/observability/error-sink.ts
+@@ -0,0 +1,60 @@
++import * as Sentry from "@sentry/node";
++import { logger } from "./logger.js";
++
++/**
++ * Error-tracking sink (free/dev tier) — captures unhandled errors.
++ *
++ * Bootstrap subset of `docs/kb/monitoring.md`. The provider (Sentry, free tier)
++ * is initialized ONLY when `SENTRY_DSN` is present. With no DSN — the default in
++ * dev/bootstrap — every export below is a graceful no-op and errors are still
++ * surfaced through pino. No crash, no network calls, no production alerting.
++ *
++ * Privacy: we intentionally do NOT enable Sentry's request-body / data capture
++ * (`sendDefaultPii` stays false). Per monitoring.md §"Standing label rules" we
++ * never ship credentials, tokens, SQL literals, or row values to the sink.
++ *
++ * TODO(epic-007 / T7.3 + T7.4): production alerting, release/deploy markers,
++ * environment routing, and the full alert catalog (A1 gate-bypass, etc.) are
++ * owned by 007-audit-observability. This file is the dev-only capture hook only.
++ */
++
++let enabled = false;
++
++/**
++ * Initialize the error sink. Safe to call once at process startup.
++ * @returns `true` if a sink was activated (DSN present), `false` if no-op.
++ */
++export function initErrorSink(): boolean {
++  const dsn = process.env["SENTRY_DSN"];
++  if (dsn === undefined || dsn.trim() === "") {
++    logger.debug("error sink disabled: no SENTRY_DSN set (dev/bootstrap default)");
++    enabled = false;
++    return false;
++  }
++
++  Sentry.init({
++    dsn,
++    environment: process.env["NODE_ENV"] ?? "development",
++    // Dev-only hook: keep tracing off here; full traces are epic-007 (T7.3).
++    tracesSampleRate: 0,
++    // Never ship PII / request bodies to the sink (monitoring privacy rules).
++    sendDefaultPii: false,
++  });
++  enabled = true;
++  logger.info("error sink enabled: Sentry initialized");
++  return true;
++}
++
++/** Whether a real sink is active. Used by the error middleware to decide whether to forward. */
++export function isErrorSinkEnabled(): boolean {
++  return enabled;
++}
++
++/**
++ * Forward an error to the sink. No-op when the sink is disabled, so callers can
++ * call this unconditionally.
++ */
++export function captureError(err: unknown): void {
++  if (!enabled) return;
++  Sentry.captureException(err);
++}
+diff --git a/apps/api/src/observability/http-logger.ts b/apps/api/src/observability/http-logger.ts
+new file mode 100644
+index 0000000..f8e7572
+--- /dev/null
++++ b/apps/api/src/observability/http-logger.ts
+@@ -0,0 +1,42 @@
++import { pinoHttp, type Options } from "pino-http";
++import type { IncomingMessage, ServerResponse } from "node:http";
++import type { LevelWithSilent } from "pino";
++import { logger } from "./logger.js";
++
++/**
++ * HTTP request logging middleware (pino-http).
++ *
++ * Logs one line per request with method / path / status / latency only.
++ * It deliberately does NOT serialize request or response bodies, query
++ * parameters with row data, SQL, or secrets (monitoring.md §5 privacy rules) —
++ * custom serializers below restrict the `req`/`res` objects to a safe field set,
++ * and pino's redaction (logger.ts) covers auth headers / cookies as a backstop.
++ *
++ * TODO(epic-007 / T7.3): correlate each line with `requestId`/trace id +
++ * `tenantId`/`userId`/`roleName` once the tenant + tracing middleware land.
++ */
++const options: Options = {
++  logger,
++  // Quieten health-check noise; everything else logs at info, errors at error.
++  customLogLevel(_req, res, err): LevelWithSilent {
++    if (err !== undefined || res.statusCode >= 500) return "error";
++    if (res.statusCode >= 400) return "warn";
++    if (res.statusCode >= 300) return "silent";
++    return "info";
++  },
++  customSuccessMessage(req, res) {
++    return `${req.method} ${req.url} ${res.statusCode}`;
++  },
++  serializers: {
++    // Only method + path. No bodies, no headers, no query row data.
++    req(req: IncomingMessage & { method?: string; url?: string }) {
++      return { method: req.method, url: req.url };
++    },
++    // Only status. pino-http appends responseTime (latency) automatically.
++    res(res: ServerResponse) {
++      return { statusCode: res.statusCode };
++    },
++  },
++};
++
++export const httpLogger = pinoHttp(options);
+diff --git a/apps/api/src/observability/logger.ts b/apps/api/src/observability/logger.ts
+new file mode 100644
+index 0000000..701d651
+--- /dev/null
++++ b/apps/api/src/observability/logger.ts
+@@ -0,0 +1,70 @@
++import pino, { type Logger, type LoggerOptions } from "pino";
++
++/**
++ * Structured logger (pino) — the API's single logging entrypoint.
++ *
++ * Bootstrap subset of the full observability plan (`docs/kb/monitoring.md` §5).
++ * - Level is read from `LOG_LEVEL` (default `info`).
++ * - In development we use the `pino-pretty` transport for human-readable output;
++ *   in every other environment we emit newline-delimited JSON (the format Cloud
++ *   Logging and any OTLP/log backend expect).
++ * - Redaction follows the monitoring privacy rules (monitoring.md §"Standing
++ *   label rules" / §5 + devops §6.3): credentials, tokens, secrets, keys are
++ *   stripped at the logger so they can never reach a sink. We never log request
++ *   bodies, SQL literals, or queried row values (enforced by NOT serializing
++ *   them — see `httpLogger` below).
++ *
++ * TODO(epic-007 / T7.3): this is the bootstrap dev logger only. Full structured
++ * fields (`tenantId`, `userId`, `roleName`, trace/`requestId` correlation) and
++ * OTel metrics/traces are wired in 007-audit-observability T7.3. Do not expand
++ * the metrics/alert catalog here.
++ */
++
++const isDevelopment = (process.env["NODE_ENV"] ?? "development") === "development";
++
++/**
++ * Keys whose values are redacted wherever they appear in a logged object.
++ * Mirrors devops §6.3 / monitoring.md §5. Paths use pino's redact syntax so
++ * both top-level and nested occurrences (e.g. inside `req.headers`) are caught.
++ */
++const REDACT_PATHS = [
++  "password",
++  "token",
++  "secret",
++  "key",
++  "credential",
++  "*.password",
++  "*.token",
++  "*.secret",
++  "*.key",
++  "*.credential",
++  'req.headers.authorization',
++  'req.headers.cookie',
++  'res.headers["set-cookie"]',
++];
++
++const baseOptions: LoggerOptions = {
++  level: process.env["LOG_LEVEL"] ?? "info",
++  redact: {
++    paths: REDACT_PATHS,
++    censor: "[redacted]",
++  },
++};
++
++const options: LoggerOptions = isDevelopment
++  ? {
++      ...baseOptions,
++      transport: {
++        target: "pino-pretty",
++        options: {
++          colorize: true,
++          translateTime: "SYS:standard",
++          ignore: "pid,hostname",
++        },
++      },
++    }
++  : baseOptions;
++
++export const logger: Logger = pino(options);
++
++export type { Logger };
+diff --git a/apps/api/src/rbac/index.ts b/apps/api/src/rbac/index.ts
+new file mode 100644
+index 0000000..40dfc03
+--- /dev/null
++++ b/apps/api/src/rbac/index.ts
+@@ -0,0 +1,3 @@
++// TODO: T1.2+ — roles, grants, users, capability flags
++// See: docs/kb/contracts.md §rbac-model
++export {};
+diff --git a/apps/api/src/tenant/index.ts b/apps/api/src/tenant/index.ts
+new file mode 100644
+index 0000000..4255dba
+--- /dev/null
++++ b/apps/api/src/tenant/index.ts
+@@ -0,0 +1,3 @@
++// TODO: tenant-scope middleware + withTenant helper
++// Uses SET LOCAL search_path inside a Prisma transaction — see docs/kb/common-pitfalls.md §Prisma/DB
++export {};
+diff --git a/apps/api/tsconfig.json b/apps/api/tsconfig.json
+new file mode 100644
+index 0000000..18d54ba
+--- /dev/null
++++ b/apps/api/tsconfig.json
+@@ -0,0 +1,11 @@
++{
++  "extends": "../../tsconfig.base.json",
++  "compilerOptions": {
++    "module": "NodeNext",
++    "moduleResolution": "NodeNext",
++    "rootDir": "src",
++    "outDir": "dist"
++  },
++  "include": ["src/**/*"],
++  "exclude": ["node_modules", "dist"]
++}
+diff --git a/apps/api/vitest.config.ts b/apps/api/vitest.config.ts
+new file mode 100644
+index 0000000..c75b408
+--- /dev/null
++++ b/apps/api/vitest.config.ts
+@@ -0,0 +1,10 @@
++import { defineConfig } from "vitest/config";
++
++export default defineConfig({
++  test: {
++    include: ["src/**/*.test.ts"],
++    exclude: ["src/**/*.integration.test.ts", "src/**/*.security.test.ts"],
++    environment: "node",
++    passWithNoTests: true,
++  },
++});
+diff --git a/apps/api/vitest.integration.config.ts b/apps/api/vitest.integration.config.ts
+new file mode 100644
+index 0000000..696eaa5
+--- /dev/null
++++ b/apps/api/vitest.integration.config.ts
+@@ -0,0 +1,10 @@
++import { defineConfig } from "vitest/config";
++
++export default defineConfig({
++  test: {
++    include: ["src/**/*.integration.test.ts"],
++    environment: "node",
++    passWithNoTests: true,
++    testTimeout: 30000,
++  },
++});
+diff --git a/apps/api/vitest.security.config.ts b/apps/api/vitest.security.config.ts
+new file mode 100644
+index 0000000..91bd0ed
+--- /dev/null
++++ b/apps/api/vitest.security.config.ts
+@@ -0,0 +1,10 @@
++import { defineConfig } from "vitest/config";
++
++export default defineConfig({
++  test: {
++    include: ["src/**/*.security.test.ts"],
++    environment: "node",
++    passWithNoTests: true,
++    testTimeout: 30000,
++  },
++});
+diff --git a/apps/web/.dockerignore b/apps/web/.dockerignore
+new file mode 100644
+index 0000000..44b578b
+--- /dev/null
++++ b/apps/web/.dockerignore
+@@ -0,0 +1,13 @@
++node_modules
++dist
++.turbo
++.env
++.env.*
++*.pem
++*.key
++coverage
++__tests__
++*.test.ts
++*.test.tsx
++*.spec.ts
++*.spec.tsx
+diff --git a/apps/web/Dockerfile b/apps/web/Dockerfile
+new file mode 100644
+index 0000000..e36d769
+--- /dev/null
++++ b/apps/web/Dockerfile
+@@ -0,0 +1,38 @@
++# ── Stage 1: builder ───────────────────────────────────────────────────────────
++FROM node:20-alpine AS builder
++
++WORKDIR /build
++
++RUN corepack enable && corepack prepare pnpm@latest --activate
++
++# Copy workspace manifests; layer-cache misses only when lockfile changes
++COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
++COPY packages/contracts/package.json packages/contracts/
++COPY apps/web/package.json apps/web/
++
++RUN pnpm install --frozen-lockfile
++
++# Copy source
++COPY tsconfig.base.json ./
++COPY packages/contracts/ packages/contracts/
++COPY apps/web/ apps/web/
++
++# Build the SPA (vite build writes to apps/web/dist/)
++RUN pnpm --filter @bi/web build
++
++
++# ── Stage 2: serve ─────────────────────────────────────────────────────────────
++FROM nginx:alpine AS serve
++
++# Replace the default nginx config with the SPA-routing config
++COPY apps/web/nginx.conf /etc/nginx/conf.d/default.conf
++
++# Copy the compiled SPA assets
++COPY --from=builder /build/apps/web/dist /usr/share/nginx/html
++
++# nginx:alpine already runs as root to bind port 80; the worker processes drop
++# to the `nginx` user automatically via the default nginx.conf `user nginx` directive.
++
++EXPOSE 80
++
++CMD ["nginx", "-g", "daemon off;"]
+diff --git a/apps/web/e2e/smoke.spec.ts b/apps/web/e2e/smoke.spec.ts
+new file mode 100644
+index 0000000..d3388ac
+--- /dev/null
++++ b/apps/web/e2e/smoke.spec.ts
+@@ -0,0 +1,13 @@
++import { test, expect } from "@playwright/test";
++
++/**
++ * E2E smoke test — verifies the app loads in a real browser and the
++ * root page renders the expected heading text.
++ *
++ * This is the framework-verification smoke test only. Feature e2e
++ * tests will be added per-Task as screens are implemented.
++ */
++test("home page renders BI Result Presenter heading", async ({ page }) => {
++  await page.goto("/");
++  await expect(page.getByRole("heading", { name: "BI Result Presenter" })).toBeVisible();
++});
+diff --git a/apps/web/index.html b/apps/web/index.html
+new file mode 100644
+index 0000000..72bb693
+--- /dev/null
++++ b/apps/web/index.html
+@@ -0,0 +1,12 @@
++<!doctype html>
++<html lang="en">
++  <head>
++    <meta charset="UTF-8" />
++    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
++    <title>BI Result Presenter</title>
++  </head>
++  <body>
++    <div id="root"></div>
++    <script type="module" src="/src/main.tsx"></script>
++  </body>
++</html>
+diff --git a/apps/web/nginx.conf b/apps/web/nginx.conf
+new file mode 100644
+index 0000000..cfc895d
+--- /dev/null
++++ b/apps/web/nginx.conf
+@@ -0,0 +1,25 @@
++server {
++    listen 80;
++    server_name _;
++
++    root /usr/share/nginx/html;
++    index index.html;
++
++    # Serve pre-compressed assets when available
++    gzip_static on;
++
++    location / {
++        # SPA fallback: unknown paths served as index.html so React Router handles routing
++        try_files $uri $uri/ /index.html;
++    }
++
++    # Cache fingerprinted static assets aggressively; index.html must revalidate
++    location ~* \.(js|css|png|jpg|jpeg|svg|ico|woff2?)$ {
++        expires 1y;
++        add_header Cache-Control "public, immutable";
++    }
++
++    location = /index.html {
++        add_header Cache-Control "no-cache";
++    }
++}
+diff --git a/apps/web/package.json b/apps/web/package.json
+new file mode 100644
+index 0000000..c1a8ca1
+--- /dev/null
++++ b/apps/web/package.json
+@@ -0,0 +1,45 @@
++{
++  "name": "@bi/web",
++  "version": "0.1.0",
++  "private": true,
++  "type": "module",
++  "scripts": {
++    "dev": "vite",
++    "build": "vite build",
++    "typecheck": "tsc --noEmit",
++    "lint": "eslint src --ext .ts,.tsx",
++    "test:unit": "vitest run --reporter=verbose",
++    "preview": "vite preview",
++    "test:e2e": "playwright test"
++  },
++  "dependencies": {
++    "@bi/contracts": "workspace:*",
++    "@radix-ui/react-dialog": "^1.1.2",
++    "@radix-ui/react-dropdown-menu": "^2.1.2",
++    "@radix-ui/react-slot": "^1.1.0",
++    "@radix-ui/react-toast": "^1.2.2",
++    "@tanstack/react-query": "^5.59.16",
++    "react": "^18.3.1",
++    "react-dom": "^18.3.1",
++    "react-router-dom": "^6.27.0",
++    "recharts": "^2.13.3",
++    "zod": "^3.23.8"
++  },
++  "devDependencies": {
++    "@playwright/test": "^1.61.0",
++    "@testing-library/jest-dom": "^6.6.3",
++    "@testing-library/react": "^16.0.1",
++    "@testing-library/user-event": "^14.5.2",
++    "@types/node": "^20.16.11",
++    "@types/react": "^18.3.11",
++    "@types/react-dom": "^18.3.1",
++    "@vitejs/plugin-react": "^4.3.3",
++    "autoprefixer": "^10.4.20",
++    "jsdom": "^25.0.1",
++    "postcss": "^8.4.47",
++    "tailwindcss": "^3.4.14",
++    "typescript": "^5.6.3",
++    "vite": "^5.4.10",
++    "vitest": "^2.1.4"
++  }
++}
+diff --git a/apps/web/playwright.config.ts b/apps/web/playwright.config.ts
+new file mode 100644
+index 0000000..35ac129
+--- /dev/null
++++ b/apps/web/playwright.config.ts
+@@ -0,0 +1,47 @@
++import { defineConfig, devices } from "@playwright/test";
++
++/**
++ * Playwright e2e configuration for apps/web.
++ *
++ * webServer: builds with `vite build` then serves via `vite preview`
++ * on port 4173 (Vite's default preview port). This avoids needing a
++ * running API for the scaffold smoke tests; the SPA is fully static at
++ * this stage.
++ *
++ * Browser binaries must be installed via `npx playwright install chromium`
++ * before running locally or in CI. The post-merge CI job handles this.
++ *
++ * test:e2e is NOT a PR gate (see bootstrap-plan.md §3 and turbo.json).
++ * The turbo task exists so the post-merge push job can invoke it.
++ */
++export default defineConfig({
++  testDir: "./e2e",
++  /* Run each test file in parallel */
++  fullyParallel: true,
++  /* Fail the build on CI if you accidentally left test.only in source */
++  forbidOnly: !!process.env["CI"],
++  /* No retries in local dev; 1 retry on CI for transient flakes */
++  retries: process.env["CI"] ? 1 : 0,
++  /* Reporter: list in CI for clean log lines; default (list+html) locally */
++  reporter: process.env["CI"] ? "list" : "list",
++  use: {
++    /* Base URL matched to vite preview default port */
++    baseURL: "http://localhost:4173",
++    /* Capture trace on first retry only */
++    trace: "on-first-retry",
++  },
++  projects: [
++    {
++      name: "chromium",
++      use: { ...devices["Desktop Chrome"] },
++    },
++  ],
++  /* Start the Vite preview server before running tests */
++  webServer: {
++    command: "pnpm preview",
++    url: "http://localhost:4173",
++    reuseExistingServer: !process.env["CI"],
++    /* vite preview starts fast — 10s is generous */
++    timeout: 10_000,
++  },
++});
+diff --git a/apps/web/postcss.config.js b/apps/web/postcss.config.js
+new file mode 100644
+index 0000000..2aa7205
+--- /dev/null
++++ b/apps/web/postcss.config.js
+@@ -0,0 +1,6 @@
++export default {
++  plugins: {
++    tailwindcss: {},
++    autoprefixer: {},
++  },
++};
+diff --git a/apps/web/src/App.test.tsx b/apps/web/src/App.test.tsx
+new file mode 100644
+index 0000000..3bc1a31
+--- /dev/null
++++ b/apps/web/src/App.test.tsx
+@@ -0,0 +1,25 @@
++import { describe, it, expect } from "vitest";
++import { render, screen } from "@testing-library/react";
++import { MemoryRouter } from "react-router-dom";
++import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
++import { App } from "./App";
++
++function renderApp() {
++  const queryClient = new QueryClient({
++    defaultOptions: { queries: { retry: false } },
++  });
++  return render(
++    <QueryClientProvider client={queryClient}>
++      <MemoryRouter>
++        <App />
++      </MemoryRouter>
++    </QueryClientProvider>
++  );
++}
++
++describe("App", () => {
++  it("renders the placeholder home page", () => {
++    renderApp();
++    expect(screen.getByText("BI Result Presenter")).toBeInTheDocument();
++  });
++});
+diff --git a/apps/web/src/App.tsx b/apps/web/src/App.tsx
+new file mode 100644
+index 0000000..146a6c9
+--- /dev/null
++++ b/apps/web/src/App.tsx
+@@ -0,0 +1,18 @@
++import { Routes, Route } from "react-router-dom";
++
++function PlaceholderPage({ title }: { title: string }) {
++  return (
++    <main className="flex min-h-screen items-center justify-center bg-white">
++      <h1 className="text-2xl font-semibold text-primary">{title}</h1>
++    </main>
++  );
++}
++
++export function App() {
++  return (
++    <Routes>
++      <Route path="/" element={<PlaceholderPage title="BI Result Presenter" />} />
++      {/* TODO: T1.4 — replace with the 11 real screens from ui-ux-spec.md */}
++    </Routes>
++  );
++}
+diff --git a/apps/web/src/index.css b/apps/web/src/index.css
+new file mode 100644
+index 0000000..890fb4b
+--- /dev/null
++++ b/apps/web/src/index.css
+@@ -0,0 +1,11 @@
++@tailwind base;
++@tailwind components;
++@tailwind utilities;
++
++@layer base {
++  :root {
++    /* Design tokens — primary navy #1E3A6E, accent teal #0EA5A0 */
++    --color-primary: #1e3a6e;
++    --color-accent: #0ea5a0;
++  }
++}
+diff --git a/apps/web/src/lib/api-client.ts b/apps/web/src/lib/api-client.ts
+new file mode 100644
+index 0000000..a010ae1
+--- /dev/null
++++ b/apps/web/src/lib/api-client.ts
+@@ -0,0 +1,3 @@
++// TODO: T1.4 — typed HTTP client consuming @bi/contracts types
++// See: docs/kb/contracts.md for the full API surface
++export {};
+diff --git a/apps/web/src/lib/sse-client.ts b/apps/web/src/lib/sse-client.ts
+new file mode 100644
+index 0000000..b782582
+--- /dev/null
++++ b/apps/web/src/lib/sse-client.ts
+@@ -0,0 +1,3 @@
++// TODO: T1.4 — SSE client consuming @bi/contracts event types
++// See: docs/kb/contracts.md §chat-api, docs/kb/patterns.md §streaming-sse
++export {};
+diff --git a/apps/web/src/main.tsx b/apps/web/src/main.tsx
+new file mode 100644
+index 0000000..260095c
+--- /dev/null
++++ b/apps/web/src/main.tsx
+@@ -0,0 +1,28 @@
++import { StrictMode } from "react";
++import { createRoot } from "react-dom/client";
++import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
++import { BrowserRouter } from "react-router-dom";
++import "./index.css";
++import { App } from "./App";
++
++const queryClient = new QueryClient({
++  defaultOptions: {
++    queries: {
++      staleTime: 60_000,
++      retry: 1,
++    },
++  },
++});
++
++const rootEl = document.getElementById("root");
++if (!rootEl) throw new Error("Root element not found");
++
++createRoot(rootEl).render(
++  <StrictMode>
++    <QueryClientProvider client={queryClient}>
++      <BrowserRouter>
++        <App />
++      </BrowserRouter>
++    </QueryClientProvider>
++  </StrictMode>
++);
+diff --git a/apps/web/tailwind.config.ts b/apps/web/tailwind.config.ts
+new file mode 100644
+index 0000000..067a27e
+--- /dev/null
++++ b/apps/web/tailwind.config.ts
+@@ -0,0 +1,41 @@
++import type { Config } from "tailwindcss";
++
++const config: Config = {
++  content: ["./index.html", "./src/**/*.{ts,tsx}"],
++  theme: {
++    extend: {
++      colors: {
++        // Design tokens — see docs/ui-ux-spec.md
++        primary: {
++          DEFAULT: "#1E3A6E", // navy
++          50: "#eef2f9",
++          100: "#d5e0f0",
++          200: "#abc1e1",
++          300: "#82a2d2",
++          400: "#5883c3",
++          500: "#1E3A6E",
++          600: "#1a3361",
++          700: "#162c54",
++          800: "#112547",
++          900: "#0d1e3a",
++        },
++        accent: {
++          DEFAULT: "#0EA5A0", // teal
++          50: "#e6f8f8",
++          100: "#ccf1f0",
++          200: "#99e3e1",
++          300: "#66d5d2",
++          400: "#33c7c3",
++          500: "#0EA5A0",
++          600: "#0c9490",
++          700: "#0a8380",
++          800: "#087270",
++          900: "#066160",
++        },
++      },
++    },
++  },
++  plugins: [],
++};
++
++export default config;
+diff --git a/apps/web/tsconfig.e2e.json b/apps/web/tsconfig.e2e.json
+new file mode 100644
+index 0000000..5c0f2e3
+--- /dev/null
++++ b/apps/web/tsconfig.e2e.json
+@@ -0,0 +1,12 @@
++{
++  "extends": "../../tsconfig.base.json",
++  "compilerOptions": {
++    "module": "ESNext",
++    "moduleResolution": "Bundler",
++    "lib": ["ES2022", "DOM"],
++    "target": "ES2022",
++    "noEmit": true,
++    "allowImportingTsExtensions": true
++  },
++  "include": ["e2e/**/*", "playwright.config.ts"]
++}
+diff --git a/apps/web/tsconfig.json b/apps/web/tsconfig.json
+new file mode 100644
+index 0000000..c1d5be0
+--- /dev/null
++++ b/apps/web/tsconfig.json
+@@ -0,0 +1,15 @@
++{
++  "extends": "../../tsconfig.base.json",
++  "compilerOptions": {
++    "module": "ESNext",
++    "moduleResolution": "Bundler",
++    "lib": ["ES2022", "DOM", "DOM.Iterable"],
++    "jsx": "react-jsx",
++    "target": "ES2022",
++    "noEmit": true,
++    "allowImportingTsExtensions": true,
++    "types": ["vitest/globals", "@testing-library/jest-dom"]
++  },
++  "include": ["src/**/*", "vite.config.ts", "vitest.setup.ts"],
++  "exclude": ["node_modules", "dist"]
++}
+diff --git a/apps/web/vite.config.ts b/apps/web/vite.config.ts
+new file mode 100644
+index 0000000..dac64e1
+--- /dev/null
++++ b/apps/web/vite.config.ts
+@@ -0,0 +1,19 @@
++import { defineConfig } from "vite";
++import react from "@vitejs/plugin-react";
++
++export default defineConfig({
++  plugins: [react()],
++  server: {
++    port: 5173,
++    proxy: {
++      "/api": {
++        target: process.env["VITE_API_URL"] ?? "http://localhost:3000",
++        changeOrigin: true,
++      },
++    },
++  },
++  build: {
++    outDir: "dist",
++    sourcemap: true,
++  },
++});
+diff --git a/apps/web/vitest.config.ts b/apps/web/vitest.config.ts
+new file mode 100644
+index 0000000..d4fecc7
+--- /dev/null
++++ b/apps/web/vitest.config.ts
+@@ -0,0 +1,13 @@
++import { defineConfig } from "vitest/config";
++import react from "@vitejs/plugin-react";
++
++export default defineConfig({
++  plugins: [react()],
++  test: {
++    include: ["src/**/*.test.{ts,tsx}"],
++    environment: "jsdom",
++    setupFiles: ["./vitest.setup.ts"],
++    globals: true,
++    passWithNoTests: true,
++  },
++});
+diff --git a/apps/web/vitest.setup.ts b/apps/web/vitest.setup.ts
+new file mode 100644
+index 0000000..d0de870
+--- /dev/null
++++ b/apps/web/vitest.setup.ts
+@@ -0,0 +1 @@
++import "@testing-library/jest-dom";
+diff --git a/docker-compose.yml b/docker-compose.yml
+new file mode 100644
+index 0000000..4384cda
+--- /dev/null
++++ b/docker-compose.yml
+@@ -0,0 +1,86 @@
++# ─────────────────────────────────────────────────────────────────────────────
++# Local development stack — brings up Postgres + API in one command.
++#
++# Usage:
++#   cp .env.example .env.local   # fill in DATABASE_URL, JWT secrets, etc.
++#   docker compose up            # starts db + api + migrate-seed
++#   pnpm --filter web dev        # in a second terminal (SPA with HMR)
++#
++# Web SPA is intentionally excluded from this compose file; Vite HMR is
++# faster on the host. Add it via `--profile full` in a future iteration.
++# ─────────────────────────────────────────────────────────────────────────────
++
++services:
++
++  # ── Postgres control-plane DB ───────────────────────────────────────────────
++  db:
++    image: postgres:16-alpine
++    restart: unless-stopped
++    environment:
++      POSTGRES_USER: postgres
++      POSTGRES_PASSWORD: postgres
++      POSTGRES_DB: bi_platform
++    volumes:
++      - db_data:/var/lib/postgresql/data
++    ports:
++      - "127.0.0.1:5432:5432"
++    healthcheck:
++      test: ["CMD-SHELL", "pg_isready -U postgres -d bi_platform"]
++      interval: 5s
++      timeout: 5s
++      retries: 10
++      start_period: 10s
++
++  # ── API (Express) ───────────────────────────────────────────────────────────
++  api:
++    build:
++      context: .
++      dockerfile: apps/api/Dockerfile
++    restart: unless-stopped
++    env_file:
++      - .env.local
++    environment:
++      # Override DATABASE_URL so the API container resolves the db service by
++      # compose service name rather than `localhost` (which is the host value in
++      # .env.local and won't resolve inside the container network).
++      DATABASE_URL: postgresql://postgres:postgres@db:5432/bi_platform
++    ports:
++      - "127.0.0.1:3000:3000"
++    depends_on:
++      db:
++        condition: service_healthy
++    healthcheck:
++      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/health || exit 1"]
++      interval: 10s
++      timeout: 5s
++      retries: 5
++      start_period: 15s
++
++  # ── Migrate + seed (one-shot placeholder) ───────────────────────────────────
++  # TODO(T1.2): Replace this placeholder with the real migration command once
++  # the full Prisma control-plane schema lands in T1.2:
++  #
++  #   command: >
++  #     sh -c "npx prisma migrate deploy &&
++  #            node dist/scripts/provision-tenant.js --name demo --admin-email admin@demo.example"
++  #
++  # The provision-tenant script (T8.1, deferred post-v1) will create the
++  # `tenant_demo` schema, apply DDL, seed the Admin role with can_inspect_query=ON.
++  #
++  # Until T1.2 ships the real schema, this service logs its TODO and exits 0 so
++  # `docker compose up` does not fail the stack.
++  migrate-seed:
++    image: busybox:latest
++    restart: "no"
++    depends_on:
++      db:
++        condition: service_healthy
++    command: >
++      sh -c "echo '[migrate-seed] TODO: real migrations land in T1.2 (prisma migrate deploy)' &&
++             echo '[migrate-seed] TODO: tenant_demo provisioning lands in T8.1 (provision-tenant.ts)' &&
++             echo '[migrate-seed] Placeholder exiting 0 — stack is safe to use.' &&
++             exit 0"
++
++volumes:
++  db_data:
++    driver: local
+diff --git a/docs/kb/README.md b/docs/kb/README.md
+index 081f45e..8823b22 100644
+--- a/docs/kb/README.md
++++ b/docs/kb/README.md
+@@ -17,6 +17,7 @@ listed in each Task's `kb-refs` plus this index. Keep entries to pointers.
+ - [monitoring-direction.md](monitoring-direction.md) — what must be observable (gate, latency, LLM cost/tokens, errors). Direction only; `monitor` agent owns concrete config.
+ - [monitoring.md](monitoring.md) — concrete monitoring config: metrics catalog (names/types/labels/source spans), SLOs, alert rules (incl. P1 gate-bypass), dashboard panel groups. Produced from monitoring-direction.
+ - [common-pitfalls.md](common-pitfalls.md) — gate bypass, tenant leakage, LLM injection, streaming back-pressure, export leaks.
++- [bootstrap-plan.md](bootstrap-plan.md) — concrete scaffold spec for the coder: exact monorepo folder tree, local dev one-command flow, Turborepo task graph, CI stub-to-real approach, scaffold order, and flagged conflicts.
+ 
+ ## Locked decisions (do not re-open)
+ 
+diff --git a/docs/kb/bootstrap-plan.md b/docs/kb/bootstrap-plan.md
+new file mode 100644
+index 0000000..3564025
+--- /dev/null
++++ b/docs/kb/bootstrap-plan.md
+@@ -0,0 +1,269 @@
++# Bootstrap Plan — BI Result Presenter
++
++> **Audience: coder (scaffold pass).** This is a concrete build spec, not prose.
++> It derives from `devops.md`, `tech-stack.md`, and `conventions/README.md`.
++> Conflicts vs. the source documents are flagged at the bottom.
++
++---
++
++## 1. Exact Monorepo Layout
++
++```
++bi-agent/                              ← repo root
++├── .github/
++│   └── workflows/
++│       └── ci.yml                    ← GitHub Actions CI (T1.5)
++├── apps/
++│   ├── api/                          ← Express + TypeScript API (modular monolith)
++│   │   ├── src/
++│   │   │   ├── auth/                 ← identity, sessions, SSO, invites
++│   │   │   ├── rbac/                 ← roles, grants, users, capability flags
++│   │   │   ├── admin/               ← admin route handlers
++│   │   │   ├── ask/                  ← ask pipeline: gate, validator, orchestrator
++│   │   │   ├── llm/
++│   │   │   │   ├── port.ts           ← LlmProvider interface
++│   │   │   │   ├── adapters/
++│   │   │   │   │   └── gemini.ts     ← @google/genai import lives HERE ONLY
++│   │   │   │   └── factory.ts
++│   │   │   ├── datasource/           ← connectors (pg/mysql2/bigquery/undici) + query proxy + vault
++│   │   │   ├── conversations/        ← history + retention purge job
++│   │   │   ├── audit/                ← audit log writer
++│   │   │   ├── tenant/               ← tenant-scope middleware + withTenant helper
++│   │   │   └── db/                   ← Prisma schema + migrations (control plane only)
++│   │   │       ├── schema.prisma
++│   │   │       └── migrations/
++│   │   ├── Dockerfile                ← multi-stage Node 20 alpine (T1.6)
++│   │   ├── .dockerignore
++│   │   ├── package.json              ← deps: express, prisma client, zod, pino, argon2,
++│   │   │                                       openid-client, node-sql-parser,
++│   │   │                                       pg, mysql2, @google-cloud/bigquery, undici,
++│   │   │                                       @google/genai, jsonwebtoken, @opentelemetry/*
++│   │   └── tsconfig.json             ← extends ../../tsconfig.base.json
++│   └── web/                          ← React 18 + Vite SPA
++│       ├── src/
++│       │   ├── features/             ← chat/, admin-roles/, admin-perms/, admin-users/,
++│       │   │                                admin-datasources/, admin-audit/, auth/, account/
++│       │   ├── components/           ← ChartCard, MessageBubble, shared UI
++│       │   ├── charts/               ← Recharts wrappers + a11y
++│       │   └── lib/
++│       │       ├── api-client.ts     ← typed HTTP client consuming @bi/contracts types
++│       │       └── sse-client.ts     ← SSE client consuming @bi/contracts event types
++│       ├── Dockerfile                ← Vite build → nginx:alpine serve stage (T1.6)
++│       ├── .dockerignore
++│       ├── index.html
++│       ├── vite.config.ts
++│       ├── tailwind.config.ts
++│       ├── package.json              ← deps: react, react-dom, react-router-dom,
++│       │                                       @tanstack/react-query, @radix-ui/*,
++│       │                                       recharts, @bi/contracts
++│       │                              devDeps: @axe-core/react, @testing-library/*,
++│       │                                       playwright, vite, tailwindcss, autoprefixer
++│       └── tsconfig.json             ← extends ../../tsconfig.base.json
++├── packages/
++│   └── contracts/                    ← shared Zod schemas + inferred TS types (T1.3)
++│       ├── src/
++│       │   ├── chat.ts               ← SSE event shapes, ResultEnvelope
++│       │   ├── rbac.ts               ← Role, ResourceGrant, User, DataSource
++│       │   ├── audit.ts              ← AuditEvent
++│       │   ├── auth.ts               ← auth payloads, JWT claims
++│       │   ├── permission-block.ts   ← PermissionBlock
++│       │   ├── generated-query.ts    ← GeneratedQueryView
++│       │   └── error-codes.ts        ← error-codes discriminated union
++│       ├── index.ts                  ← re-exports all schemas + types
++│       ├── package.json              ← name: "@bi/contracts"; deps: zod only
++│       └── tsconfig.json             ← extends ../../tsconfig.base.json
++├── scripts/
++│   └── provision-tenant.ts           ← tenant provisioning script (deferred: T8.1)
++├── docker-compose.yml                ← local dev stack (T1.7)
++├── package.json                      ← root; pnpm workspaces; root scripts
++├── pnpm-workspace.yaml               ← workspaces: ["apps/*", "packages/*"]
++├── turbo.json                        ← task graph (see §3)
++├── tsconfig.base.json                ← strict: true, no any, path aliases
++├── eslint.config.js                  ← flat config; custom rule: no provider SDK outside adapters/
++├── .prettierrc
++├── .gitignore                        ← node_modules, .env*, *.pem, *.key, dist/, .turbo/
++├── .env.example                      ← placeholder values for all required vars (see §2)
++└── README.md                         ← local-dev quick-start
++```
++
++### Package purposes and key dependencies (names only)
++
++| Package | Purpose | Key deps |
++|---------|---------|----------|
++| `apps/api` | Express HTTP + SSE server; control-plane DB via Prisma; data-plane via raw drivers; LLM orchestration; auth; RBAC | `express`, `@prisma/client`, `prisma`, `zod`, `pino`, `argon2`, `openid-client`, `node-sql-parser`, `pg`, `mysql2`, `@google-cloud/bigquery`, `undici`, `@google/genai`, `jsonwebtoken`, `@opentelemetry/sdk-node`, `@opentelemetry/auto-instrumentations-node` |
++| `apps/web` | React 18 SPA; 11 screens; Tailwind + Radix UI; Recharts charts; SSE-driven chat | `react`, `react-dom`, `react-router-dom`, `@tanstack/react-query`, `@radix-ui/react-*`, `recharts`, `@bi/contracts` |
++| `packages/contracts` | Single source of truth for FE/BE seam: Zod schemas + inferred TS types | `zod` |
++
++---
++
++## 2. Local Dev Environment
++
++### One-command sequence
++
++```sh
++# 1. Install all workspace dependencies
++pnpm install
++
++# 2. Copy env template and fill in local values
++cp .env.example .env.local
++# Edit .env.local — at minimum set DATABASE_URL, JWT_ACCESS_SECRET, JWT_REFRESH_SECRET,
++# KMS_KEY_REF (test stub), GEMINI_API_KEY
++
++# 3. Start Postgres + API + run migrations/seed
++docker compose up
++
++# 4. In a second terminal — start the Vite dev server (fast HMR)
++pnpm --filter web dev
++```
++
++SPA dev server talks to the API at `http://localhost:3000` (configured via `VITE_API_URL` in `.env.local` — this is not a secret, it is a URL only).
++
++### docker-compose.yml services (T1.7)
++
++| Service | Image | Role | Notes |
++|---------|-------|------|-------|
++| `db` | `postgres:16-alpine` | Control-plane Postgres | Named volume; port 5432 exposed on `127.0.0.1` only; healthcheck via `pg_isready` |
++| `api` | Built from `apps/api/Dockerfile` | Express API | `depends_on: db (healthy)`; reads `.env.local` via `env_file`; port 3000 |
++| `migrate-seed` | Built from `apps/api/Dockerfile` | One-shot | Runs after `db` healthy: `prisma migrate deploy` against `platform` schema, then provisions `tenant_demo` with seeded admin role (`can_inspect_query: ON`); exits 0 |
++
++Web SPA is NOT in the default compose path. Optional `--profile full` may add it later (HMR is faster via host `pnpm dev`).
++
++### .env.local variables required
++
++All of these are already defined in `devops.md §6.1`; reproduced here for the coder. No new secrets invented.
++
++| Variable | What it is | Example / stub value |
++|----------|-----------|---------------------|
++| `DATABASE_URL` | Prisma control-plane Postgres URL | `postgresql://postgres:postgres@localhost:5432/bi_platform` |
++| `GEMINI_API_KEY` | Google Gemini API key | `your-gemini-api-key` |
++| `JWT_ACCESS_SECRET` | JWT access token signing key | `dev-access-secret-change-me` |
++| `JWT_REFRESH_SECRET` | JWT refresh token signing key | `dev-refresh-secret-change-me` |
++| `KMS_KEY_REF` | KMS key reference for cred vault | `local-test-key` (emulated in dev) |
++| `NODE_ENV` | Runtime environment | `development` |
++| `PORT` | API listen port | `3000` |
++| `LOG_LEVEL` | Pino log level | `debug` |
++| `LLM_PROVIDER` | LLM provider name | `gemini` |
++| `LLM_MODEL` | LLM model identifier | `gemini-1.5-flash` |
++| `RESULT_ROW_CAP` | Hard cap on result rows returned | `10000` |
++| `CHART_DOWNGRADE_ROW_THRESHOLD` | Row count at which chart degrades to table | `2000` |
++| `HISTORY_RETENTION_DAYS` | Conversation history retention | `365` |
++| `VITE_API_URL` | SPA → API base URL (non-secret) | `http://localhost:3000` |
++
++`TURBO_TOKEN` / `TURBO_TEAM` are GitHub Actions secrets only; not needed locally.
++
++`OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET` are per-tenant, stored in the cred vault (encrypted in DB); they are not global `.env.local` vars.
++
++`.env.example` commits all of the above with placeholder values. `.gitignore` blocks `.env`, `.env.local`, `*.pem`, `*.key`.
++
++### Local logging / error sink (dev-only)
++
++Pino logs stream to stdout in pretty-print mode (`pino-pretty` devDep). No cloud logging in dev. OpenTelemetry exporter points to `http://localhost:4317` (OTEL_EXPORTER_OTLP_ENDPOINT in `.env.example`); a local Jaeger or OTEL collector container can be added optionally via `--profile observability` in docker-compose. This is dev-only — no cloud infra in bootstrap.
++
++---
++
++## 3. CI Skeleton → Real (Stub-First Approach)
++
++T1.5 owns the full CI pipeline. The scaffold order matters:
++
++**Step 2 (T1.1 wave):** commit a passing `echo`-stub `.github/workflows/ci.yml` so the repo has a CI file and branch protection can be wired. Each job simply `echo`s its name and exits 0. This lets the DevTeam harness validate the task gate without real tests.
++
++**Step 4 (T1.5 wave):** replace the stubs with the real `turbo`-driven pipeline per `devops.md §2`.
++
++### Turborepo task graph — `turbo.json`
++
++All tasks must be defined here with their `dependsOn` shape before the real CI is wired.
++
++| Turbo task name | `dependsOn` | Tool | CI job name |
++|----------------|------------|------|-------------|
++| `lint` | `[]` (no dep; runs in parallel with `typecheck`) | ESLint + Prettier | `CI / lint` |
++| `typecheck` | `[]` | `tsc --noEmit` (strict) | `CI / typecheck` |
++| `test:unit` | `["typecheck"]` | Vitest; coverage gate on security-critical modules | `CI / unit` |
++| `test:integration` | `["typecheck"]` | Vitest + Supertest + Testcontainers Postgres; `prisma migrate deploy` in test container | `CI / integration` |
++| `test:security` | `["typecheck"]` | Adversarial Vitest suites (permission gate, query validator, tenant middleware, restricted-credential proxy) | `CI / security-tests` |
++| `build` | `["typecheck", "lint"]` | `tsup` (API) + `vite build` (web) + `docker build` (both images) | `CI / build` |
++
++Notes:
++- `test:unit` and `test:integration` can run in parallel (both depend only on `typecheck`).
++- `test:security` can run in parallel with `test:unit` and `test:integration` (also depends only on `typecheck`).
++- `build` depends on `typecheck` + `lint` (not on tests — tests and build are parallel after typecheck/lint).
++- `test:e2e` (`turbo test:e2e`, Playwright + axe-core) is NOT a PR gate; it runs post-merge on push to `main` only (separate job in `ci.yml`, not in the PR required checks list).
++
++### Required PR checks (branch protection on `main`)
++
++Exact check names that must be green before merge:
++```
++CI / lint
++CI / typecheck
++CI / unit
++CI / integration
++CI / build
++CI / security-tests
++```
++
++`CI / e2e` is post-merge only. Not a merge gate.
++
++### Turborepo remote cache
++
++`TURBO_TOKEN` + `TURBO_TEAM` injected as GitHub Actions encrypted secrets. Local dev runs without remote cache (no token needed). Cache keys include `pnpm-lock.yaml` hash.
++
++---
++
++## 4. Dev-Only Services
++
++| Service | Where | Notes |
++|---------|-------|-------|
++| Postgres 16 | `docker-compose.yml` — `db` service | Named volume, local only, port 5432 on 127.0.0.1 |
++| API (Express) | `docker-compose.yml` — `api` service | Reads `.env.local`; no cloud infra |
++| Migrate/seed | `docker-compose.yml` — `migrate-seed` one-shot | Applies Prisma migrations + seeds demo tenant |
++| Vite dev server (SPA) | Host process via `pnpm --filter web dev` | HMR; not in compose |
++| Pino logs | stdout / `pino-pretty` | Dev only; no cloud sink |
++| OTEL collector (optional) | docker-compose `--profile observability` (not in default) | Jaeger or local collector; `localhost:4317` |
++
++No cloud infra (Cloud Run, Cloud SQL, KMS, Secret Manager, Firebase Hosting, Artifact Registry) is provisioned in bootstrap. Epic 008 (infra-ops) is DEFERRED post-v1. v1 deploys follow `docs/DEPLOYMENT.md` (manual).
++
++---
++
++## 5. Scaffold Order (aligned to Epic 001 wave plan)
++
++The coder must follow this sequence so each step has what it needs:
++
++### Wave 1 — Foundation (parallel)
++- **T1.1** — Monorepo scaffold: `pnpm-workspace.yaml`, root `package.json`, `turbo.json` (stub tasks), `tsconfig.base.json`, `eslint.config.js` (with custom provider SDK lint rule), `.prettierrc`, `.gitignore`, `.env.example`. Create `apps/api`, `apps/web`, `packages/contracts` as empty TS packages. `pnpm install && pnpm build` must pass.
++- **T1.3** — Shared contracts package: implement all Zod schemas + types in `packages/contracts`. No dep on T1.2 or T1.4. Can run in parallel with T1.1 if T1.1 scaffold is committed first (since T1.3 has no `deps` listed, but it needs the package to exist).
++
++  Practical order: T1.1 creates the empty `packages/contracts` shell → T1.3 fills it.
++
++### Wave 2 — Backend + Frontend shells (parallel after T1.1)
++- **T1.2** — Control-plane DB: Prisma schema + migrations, `withTenant` helper, Testcontainers integration test. Depends on T1.1.
++- **T1.4** — Web app shell: React Router (11 placeholder screens), Tailwind + design tokens, Radix primitives, `apiClient` + `sseClient` in `lib/`, TanStack Query provider, axe smoke test. Depends on T1.1.
++
++### Wave 3 — Infra (parallel after T1.1)
++- **T1.6** — Dockerfiles: `apps/api/Dockerfile` (multi-stage Node 20 alpine) + `apps/web/Dockerfile` (Vite build → nginx:alpine). Depends on T1.1 only; can run in parallel with T1.2 and T1.4.
++
++### Wave 4 — Compose + CI (after T1.2 + T1.6)
++- **T1.7** — `docker-compose.yml`: `db` + `api` + `migrate-seed`. Depends on T1.1, T1.2, T1.6 (reuses API Dockerfile; migrate-seed calls the provisioning routine from T1.2).
++- **T1.5** — Real CI pipeline: `.github/workflows/ci.yml` with all stages wired. Depends on T1.1, T1.2, T1.3, T1.4. At this point all packages and tests exist.
++
++```
++T1.1 (monorepo scaffold)
++  ├── T1.3 (contracts — fill the shell)          ← parallel with T1.2/T1.4/T1.6
++  ├── T1.2 (control-plane DB)                    ← parallel with T1.3/T1.4/T1.6
++  ├── T1.4 (web shell)                           ← parallel with T1.2/T1.3/T1.6
++  └── T1.6 (Dockerfiles)                         ← parallel with T1.2/T1.3/T1.4
++        └── T1.7 (docker-compose)                ← needs T1.2 + T1.6
++              └── T1.5 (CI pipeline)             ← needs T1.1+T1.2+T1.3+T1.4 (T1.7 helpful but not a declared dep)
++```
++
++---
++
++## 6. Flagged Conflicts
++
++| # | Conflict | Source A | Source B | Resolution |
++|---|----------|---------|---------|-----------|
++| C1 | **CI stub step** — the task files do not explicitly mention a passing echo-stub CI commit before the real pipeline. T1.5 acceptance criteria go straight to the real pipeline. | devops.md (implicit stub-first) | T1.5.md (real CI ACs only) | The stub is an internal scaffold technique, not an AC. T1.5 delivers the real pipeline. The coder may emit the stub as an intermediate commit within the T1.5 branch. No task change needed. |
++| C2 | **T1.3 has no `deps` field** — but it needs the monorepo scaffold (empty `packages/contracts`) to exist before it can be filled. | T1.3.md (no deps listed) | T1.1.md (creates the package shells) | Not a real conflict — T1.3 being dep-free means it can start as soon as the package shell exists in wave 1. Coder must run T1.1 first regardless. |
++| C3 | **T1.7 `migrate-seed` calls T8.1's `provision-tenant.ts`** — but T8.1 is DEFERRED post-v1. T1.7 notes allow "a thin inline seed" as an interim. | T1.7.md (notes: thin inline seed acceptable) | T8.1 (deferred) | Confirmed by T1.7 notes. Coder writes an inline seed in `migrate-seed`; it is replaced when T8.1 lands. No action needed now. |
++| C4 | **KMS in dev** — devops.md §5.1 says "Emulated (local test key)" for dev. No KMS emulator image is specified. | devops.md (KMS emulated) | T1.7.md (no KMS service in compose) | `KMS_KEY_REF=local-test-key` is a stub string; the vault module must branch on `NODE_ENV=development` to use a local no-op key. No cloud KMS container needed in bootstrap. Coder must implement the dev stub in the vault module (part of T1.2 or a follow-on datasource task). |
++| C5 | **`test:e2e` turbo task** — devops.md lists `test:e2e` as a turbo task, but T1.5 acceptance criteria do not list it in `turbo.json`. T1.5 notes say E2E runs post-merge only. | devops.md §2.1 (turbo task list includes test:e2e) | T1.5.md (ACs list only 6 tasks; notes say E2E is separate job not a PR gate) | Define `test:e2e` in `turbo.json` (so it can run in the post-merge job) but do NOT add it to the PR required checks. T1.5 must add both the turbo task entry and the separate `on: push to main` job. Not a blocker — coder includes it. |
++
++No critical blocker conflicts found. All five are resolved by the existing task notes or are implementation details for the coder.
+diff --git a/eslint.config.js b/eslint.config.js
+new file mode 100644
+index 0000000..8e03f2c
+--- /dev/null
++++ b/eslint.config.js
+@@ -0,0 +1,145 @@
++// @ts-check
++import js from "@eslint/js";
++import tsParser from "@typescript-eslint/parser";
++import tsPlugin from "@typescript-eslint/eslint-plugin";
++import globals from "globals";
++
++/**
++ * Custom rule: LLM provider SDK imports are restricted to the adapters directory.
++ * Full enforcement: only @google/genai is blocked outside apps/api/src/llm/adapters/.
++ */
++const noLlmSdkOutsideAdapters = {
++  meta: {
++    type: "problem",
++    docs: {
++      description:
++        "Disallow importing @google/genai outside apps/api/src/llm/adapters/",
++    },
++    schema: [],
++    messages: {
++      forbidden:
++        "Import of '{{pkg}}' is only permitted inside apps/api/src/llm/adapters/. Move provider-specific code there.",
++    },
++  },
++  create(context) {
++    const filePath = context.getFilename().replace(/\\/g, "/");
++    return {
++      ImportDeclaration(node) {
++        const source = node.source.value;
++        if (
++          typeof source === "string" &&
++          source.startsWith("@google/genai") &&
++          !filePath.includes("apps/api/src/llm/adapters/")
++        ) {
++          context.report({
++            node,
++            messageId: "forbidden",
++            data: { pkg: source },
++          });
++        }
++      },
++    };
++  },
++};
++
++const localRulesPlugin = {
++  rules: { "no-llm-sdk-outside-adapters": noLlmSdkOutsideAdapters },
++};
++
++export default [
++  {
++    ignores: [
++      "**/node_modules/**",
++      "**/dist/**",
++      "**/.turbo/**",
++      "**/coverage/**",
++    ],
++  },
++  js.configs.recommended,
++  // Node.js files (API)
++  {
++    files: ["apps/api/**/*.ts", "scripts/**/*.ts"],
++    languageOptions: {
++      parser: tsParser,
++      parserOptions: {
++        ecmaVersion: "latest",
++        sourceType: "module",
++      },
++      globals: {
++        ...globals.node,
++      },
++    },
++    plugins: {
++      "@typescript-eslint": tsPlugin,
++      "local-rules": localRulesPlugin,
++    },
++    rules: {
++      ...tsPlugin.configs.recommended.rules,
++      "local-rules/no-llm-sdk-outside-adapters": "error",
++      "no-console": "warn",
++      "@typescript-eslint/no-explicit-any": "error",
++      "@typescript-eslint/no-unused-vars": [
++        "error",
++        { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
++      ],
++    },
++  },
++  // Browser files (web SPA)
++  {
++    files: ["apps/web/**/*.{ts,tsx}"],
++    languageOptions: {
++      parser: tsParser,
++      parserOptions: {
++        ecmaVersion: "latest",
++        sourceType: "module",
++        ecmaFeatures: { jsx: true },
++      },
++      globals: {
++        ...globals.browser,
++        ...globals.es2021,
++      },
++    },
++    plugins: {
++      "@typescript-eslint": tsPlugin,
++      "local-rules": localRulesPlugin,
++    },
++    rules: {
++      ...tsPlugin.configs.recommended.rules,
++      "local-rules/no-llm-sdk-outside-adapters": "error",
++      "no-console": "warn",
++      "@typescript-eslint/no-explicit-any": "error",
++      "@typescript-eslint/no-unused-vars": [
++        "error",
++        { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
++      ],
++    },
++  },
++  // Shared packages (both environments)
++  {
++    files: ["packages/**/*.ts"],
++    languageOptions: {
++      parser: tsParser,
++      parserOptions: {
++        ecmaVersion: "latest",
++        sourceType: "module",
++      },
++      globals: {
++        ...globals.node,
++        ...globals.browser,
++      },
++    },
++    plugins: {
++      "@typescript-eslint": tsPlugin,
++      "local-rules": localRulesPlugin,
++    },
++    rules: {
++      ...tsPlugin.configs.recommended.rules,
++      "local-rules/no-llm-sdk-outside-adapters": "error",
++      "@typescript-eslint/no-explicit-any": "error",
++      "@typescript-eslint/no-unused-vars": [
++        "error",
++        { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
++      ],
++    },
++  },
++];
+diff --git a/package.json b/package.json
+new file mode 100644
+index 0000000..560d552
+--- /dev/null
++++ b/package.json
+@@ -0,0 +1,30 @@
++{
++  "name": "bi-agent",
++  "private": true,
++  "type": "module",
++  "packageManager": "pnpm@9.14.2",
++  "engines": {
++    "node": ">=20.0.0",
++    "pnpm": ">=9.0.0"
++  },
++  "scripts": {
++    "build": "turbo build",
++    "lint": "turbo lint",
++    "typecheck": "turbo typecheck",
++    "test:unit": "turbo test:unit",
++    "test:integration": "turbo test:integration",
++    "test:security": "turbo test:security",
++    "test:e2e": "turbo test:e2e",
++    "dev": "turbo dev"
++  },
++  "devDependencies": {
++    "@eslint/js": "^9.13.0",
++    "@typescript-eslint/eslint-plugin": "^8.13.0",
++    "@typescript-eslint/parser": "^8.13.0",
++    "eslint": "^9.13.0",
++    "globals": "^15.11.0",
++    "prettier": "^3.3.3",
++    "turbo": "^2.3.3",
++    "typescript": "^5.6.3"
++  }
++}
+diff --git a/packages/contracts/package.json b/packages/contracts/package.json
+new file mode 100644
+index 0000000..ea51b04
+--- /dev/null
++++ b/packages/contracts/package.json
+@@ -0,0 +1,28 @@
++{
++  "name": "@bi/contracts",
++  "version": "0.1.0",
++  "private": true,
++  "type": "module",
++  "main": "./dist/index.js",
++  "types": "./dist/index.d.ts",
++  "exports": {
++    ".": {
++      "import": "./dist/index.js",
++      "types": "./dist/index.d.ts"
++    }
++  },
++  "scripts": {
++    "build": "tsc --project tsconfig.json",
++    "typecheck": "tsc --noEmit --project tsconfig.json",
++    "lint": "eslint src --ext .ts",
++    "test:unit": "vitest run"
++  },
++  "dependencies": {
++    "zod": "^3.23.8"
++  },
++  "devDependencies": {
++    "@types/node": "^20.16.11",
++    "typescript": "^5.6.3",
++    "vitest": "^2.1.4"
++  }
++}
+diff --git a/packages/contracts/src/audit.ts b/packages/contracts/src/audit.ts
+new file mode 100644
+index 0000000..32c85e7
+--- /dev/null
++++ b/packages/contracts/src/audit.ts
+@@ -0,0 +1,30 @@
++// TODO: Full schema definition in contracts.md §audit-event
++import { z } from "zod";
++
++export const AuditEventTypeSchema = z.enum([
++  "query_executed",
++  "query_blocked",
++  "query_validation_failed",
++  "export",
++  "role_changed",
++  "permission_changed",
++  "user_role_assigned",
++  "data_source_changed",
++  "login",
++  "login_failed",
++]);
++export type AuditEventType = z.infer<typeof AuditEventTypeSchema>;
++
++export const AuditEventSchema = z.object({
++  id: z.string(),
++  tenantId: z.string(),
++  at: z.string().datetime(),
++  actorUserId: z.string(),
++  roleNameAtEvent: z.string(),
++  type: AuditEventTypeSchema,
++  outcome: z.enum(["success", "blocked", "error"]),
++  dataSourceId: z.string().optional(),
++  detail: z.record(z.unknown()),
++  ip: z.string().optional(),
++});
++export type AuditEvent = z.infer<typeof AuditEventSchema>;
+diff --git a/packages/contracts/src/auth.ts b/packages/contracts/src/auth.ts
+new file mode 100644
+index 0000000..ef02c0c
+--- /dev/null
++++ b/packages/contracts/src/auth.ts
+@@ -0,0 +1,36 @@
++// TODO: Full schema definition in contracts.md §auth-api
++import { z } from "zod";
++
++export const JwtClaimsSchema = z.object({
++  sub: z.string(),
++  tenantId: z.string(),
++  roleId: z.string().nullable(),
++  exp: z.number().int(),
++});
++export type JwtClaims = z.infer<typeof JwtClaimsSchema>;
++
++export const LoginRequestSchema = z.object({
++  email: z.string().email(),
++  password: z.string().min(1),
++});
++export type LoginRequest = z.infer<typeof LoginRequestSchema>;
++
++export const LoginResponseSchema = z.object({
++  accessToken: z.string(),
++});
++export type LoginResponse = z.infer<typeof LoginResponseSchema>;
++
++export const MeResponseSchema = z.object({
++  user: z.object({
++    id: z.string(),
++    email: z.string().email(),
++    displayName: z.string(),
++    status: z.enum(["invited", "active", "suspended"]),
++  }),
++  roleId: z.string().nullable(),
++  capabilities: z.object({
++    canInspectQuery: z.boolean(),
++  }),
++  tenantId: z.string(),
++});
++export type MeResponse = z.infer<typeof MeResponseSchema>;
+diff --git a/packages/contracts/src/chat.ts b/packages/contracts/src/chat.ts
+new file mode 100644
+index 0000000..3a4e898
+--- /dev/null
++++ b/packages/contracts/src/chat.ts
+@@ -0,0 +1,51 @@
++// TODO: Full schema definition in contracts.md §chat-api and §result-envelope
++import { z } from "zod";
++
++export const ColumnTypeSchema = z.enum([
++  "string",
++  "number",
++  "integer",
++  "boolean",
++  "date",
++  "datetime",
++]);
++export type ColumnType = z.infer<typeof ColumnTypeSchema>;
++
++export const ResultEnvelopeSchema = z.object({
++  messageId: z.string(),
++  queryType: z.enum(["sql", "rest"]),
++  chartType: z.enum(["bar", "line", "pie", "table"]),
++  columns: z.array(
++    z.object({
++      name: z.string(),
++      type: ColumnTypeSchema,
++      role: z.enum(["dimension", "measure", "time"]),
++    })
++  ),
++  rows: z.array(z.record(z.union([z.string(), z.number(), z.null()]))),
++  rowCount: z.number().int().nonnegative(),
++  truncated: z.boolean(),
++  notes: z.string().optional(),
++});
++export type ResultEnvelope = z.infer<typeof ResultEnvelopeSchema>;
++
++export const SseMetaEventSchema = z.object({
++  messageId: z.string(),
++  queryType: z.enum(["sql", "rest"]),
++});
++export type SseMetaEvent = z.infer<typeof SseMetaEventSchema>;
++
++export const SseTokenEventSchema = z.object({
++  delta: z.string(),
++});
++export type SseTokenEvent = z.infer<typeof SseTokenEventSchema>;
++
++export const SseResultEventSchema = z.object({
++  envelope: ResultEnvelopeSchema,
++});
++export type SseResultEvent = z.infer<typeof SseResultEventSchema>;
++
++export const SseDoneEventSchema = z.object({
++  messageId: z.string(),
++});
++export type SseDoneEvent = z.infer<typeof SseDoneEventSchema>;
+diff --git a/packages/contracts/src/error-codes.ts b/packages/contracts/src/error-codes.ts
+new file mode 100644
+index 0000000..854b131
+--- /dev/null
++++ b/packages/contracts/src/error-codes.ts
+@@ -0,0 +1,29 @@
++// TODO: Full schema definition in contracts.md §error-codes
++import { z } from "zod";
++
++export const ErrorCodeSchema = z.enum([
++  "GATE_BLOCK",
++  "CLARIFICATION",
++  "VALIDATION",
++  "DATA_SOURCE",
++  "LLM_ERROR",
++  "AUTH",
++  "TENANT",
++  "NOT_FOUND",
++  "RATE_LIMIT",
++  "INTERNAL",
++]);
++export type ErrorCode = z.infer<typeof ErrorCodeSchema>;
++
++export const SseErrorEventSchema = z.object({
++  code: ErrorCodeSchema,
++  message: z.string(),
++});
++export type SseErrorEvent = z.infer<typeof SseErrorEventSchema>;
++
++export const ApiErrorResponseSchema = z.object({
++  code: ErrorCodeSchema,
++  message: z.string(),
++  requestId: z.string().optional(),
++});
++export type ApiErrorResponse = z.infer<typeof ApiErrorResponseSchema>;
+diff --git a/packages/contracts/src/generated-query.ts b/packages/contracts/src/generated-query.ts
+new file mode 100644
+index 0000000..ea611a5
+--- /dev/null
++++ b/packages/contracts/src/generated-query.ts
+@@ -0,0 +1,12 @@
++// TODO: Full schema definition in contracts.md §generated-query-view
++import { z } from "zod";
++
++export const GeneratedQueryViewSchema = z.object({
++  messageId: z.string(),
++  queryType: z.enum(["sql", "rest"]),
++  queryText: z.string(),
++  dataSourceName: z.string(),
++  executedAt: z.string().datetime(),
++  rowCount: z.number().int().nonnegative(),
++});
++export type GeneratedQueryView = z.infer<typeof GeneratedQueryViewSchema>;
+diff --git a/packages/contracts/src/index.test.ts b/packages/contracts/src/index.test.ts
+new file mode 100644
+index 0000000..b3dee53
+--- /dev/null
++++ b/packages/contracts/src/index.test.ts
+@@ -0,0 +1,101 @@
++import { describe, it, expect } from "vitest";
++import {
++  ErrorCodeSchema,
++  ResultEnvelopeSchema,
++  PermissionBlockSchema,
++  AuditEventSchema,
++  GeneratedQueryViewSchema,
++  JwtClaimsSchema,
++  RoleSchema,
++} from "./index";
++
++describe("contracts stubs compile and parse valid payloads", () => {
++  it("ErrorCodeSchema accepts all defined error codes", () => {
++    const codes = [
++      "GATE_BLOCK",
++      "CLARIFICATION",
++      "VALIDATION",
++      "DATA_SOURCE",
++      "LLM_ERROR",
++      "AUTH",
++      "TENANT",
++      "NOT_FOUND",
++      "RATE_LIMIT",
++      "INTERNAL",
++    ] as const;
++    for (const code of codes) {
++      expect(ErrorCodeSchema.parse(code)).toBe(code);
++    }
++  });
++
++  it("ResultEnvelopeSchema parses a minimal valid envelope", () => {
++    const envelope = {
++      messageId: "msg-001",
++      queryType: "sql",
++      chartType: "bar",
++      columns: [{ name: "region", type: "string", role: "dimension" }],
++      rows: [{ region: "North" }],
++      rowCount: 1,
++      truncated: false,
++    };
++    expect(() => ResultEnvelopeSchema.parse(envelope)).not.toThrow();
++  });
++
++  it("PermissionBlockSchema parses a valid block", () => {
++    const block = {
++      messageId: "msg-002",
++      roleName: "analyst",
++      missing: [
++        { kind: "table", identifier: "sales.orders", accessNeeded: "read" },
++      ],
++    };
++    expect(() => PermissionBlockSchema.parse(block)).not.toThrow();
++  });
++
++  it("AuditEventSchema parses a valid event", () => {
++    const event = {
++      id: "evt-001",
++      tenantId: "tenant-1",
++      at: new Date().toISOString(),
++      actorUserId: "user-1",
++      roleNameAtEvent: "analyst",
++      type: "query_executed",
++      outcome: "success",
++      detail: {},
++    };
++    expect(() => AuditEventSchema.parse(event)).not.toThrow();
++  });
++
++  it("GeneratedQueryViewSchema rejects invalid queryType", () => {
++    const view = {
++      messageId: "msg-003",
++      queryType: "graphql",
++      queryText: "SELECT 1",
++      dataSourceName: "prod-db",
++      executedAt: new Date().toISOString(),
++      rowCount: 0,
++    };
++    expect(() => GeneratedQueryViewSchema.parse(view)).toThrow();
++  });
++
++  it("JwtClaimsSchema parses valid claims", () => {
++    const claims = {
++      sub: "user-1",
++      tenantId: "tenant-1",
++      roleId: "role-1",
++      exp: Math.floor(Date.now() / 1000) + 900,
++    };
++    expect(() => JwtClaimsSchema.parse(claims)).not.toThrow();
++  });
++
++  it("RoleSchema enforces name max length", () => {
++    const role = {
++      id: "role-1",
++      name: "a".repeat(65),
++      capabilities: { canInspectQuery: false },
++      createdAt: new Date().toISOString(),
++      updatedAt: new Date().toISOString(),
++    };
++    expect(() => RoleSchema.parse(role)).toThrow();
++  });
++});
+diff --git a/packages/contracts/src/index.ts b/packages/contracts/src/index.ts
+new file mode 100644
+index 0000000..da5fbad
+--- /dev/null
++++ b/packages/contracts/src/index.ts
+@@ -0,0 +1,7 @@
++export * from "./chat";
++export * from "./rbac";
++export * from "./audit";
++export * from "./auth";
++export * from "./permission-block";
++export * from "./generated-query";
++export * from "./error-codes";
+diff --git a/packages/contracts/src/permission-block.ts b/packages/contracts/src/permission-block.ts
+new file mode 100644
+index 0000000..7c742d5
+--- /dev/null
++++ b/packages/contracts/src/permission-block.ts
+@@ -0,0 +1,20 @@
++// TODO: Full schema definition in contracts.md §permission-block
++import { z } from "zod";
++
++export const PermissionBlockSchema = z.object({
++  messageId: z.string(),
++  roleName: z.string(),
++  missing: z.array(
++    z.object({
++      kind: z.enum(["schema", "table", "column"]),
++      identifier: z.string(),
++      accessNeeded: z.literal("read"),
++    })
++  ),
++});
++export type PermissionBlock = z.infer<typeof PermissionBlockSchema>;
++
++export const SseBlockEventSchema = z.object({
++  block: PermissionBlockSchema,
++});
++export type SseBlockEvent = z.infer<typeof SseBlockEventSchema>;
+diff --git a/packages/contracts/src/rbac.ts b/packages/contracts/src/rbac.ts
+new file mode 100644
+index 0000000..d57e1a9
+--- /dev/null
++++ b/packages/contracts/src/rbac.ts
+@@ -0,0 +1,47 @@
++// TODO: Full schema definition in contracts.md §rbac-model
++import { z } from "zod";
++
++export const RoleSchema = z.object({
++  id: z.string(),
++  name: z.string().max(64),
++  description: z.string().max(256).optional(),
++  capabilities: z.object({
++    canInspectQuery: z.boolean(),
++  }),
++  createdAt: z.string().datetime(),
++  updatedAt: z.string().datetime(),
++});
++export type Role = z.infer<typeof RoleSchema>;
++
++export const ResourceGrantSchema = z.object({
++  roleId: z.string(),
++  dataSourceId: z.string(),
++  kind: z.enum(["schema", "table", "column"]),
++  schema: z.string(),
++  table: z.string().optional(),
++  column: z.string().optional(),
++});
++export type ResourceGrant = z.infer<typeof ResourceGrantSchema>;
++
++export const ResourceGrantSetSchema = z.array(ResourceGrantSchema);
++export type ResourceGrantSet = z.infer<typeof ResourceGrantSetSchema>;
++
++export const UserSchema = z.object({
++  id: z.string(),
++  email: z.string().email(),
++  displayName: z.string(),
++  status: z.enum(["invited", "active", "suspended"]),
++  roleId: z.string().nullable(),
++  authMethods: z.array(z.enum(["password", "sso"])),
++  createdAt: z.string().datetime(),
++});
++export type User = z.infer<typeof UserSchema>;
++
++export const DataSourceSchema = z.object({
++  id: z.string(),
++  name: z.string(),
++  type: z.enum(["postgres", "mysql", "bigquery", "rest"]),
++  status: z.enum(["connected", "error", "unconfigured"]),
++  lastTestedAt: z.string().datetime().optional(),
++});
++export type DataSource = z.infer<typeof DataSourceSchema>;
+diff --git a/packages/contracts/tsconfig.json b/packages/contracts/tsconfig.json
+new file mode 100644
+index 0000000..d0c80c2
+--- /dev/null
++++ b/packages/contracts/tsconfig.json
+@@ -0,0 +1,12 @@
++{
++  "extends": "../../tsconfig.base.json",
++  "compilerOptions": {
++    "module": "ESNext",
++    "moduleResolution": "Bundler",
++    "rootDir": "src",
++    "outDir": "dist",
++    "composite": true
++  },
++  "include": ["src/**/*"],
++  "exclude": ["node_modules", "dist"]
++}
+diff --git a/packages/contracts/vitest.config.ts b/packages/contracts/vitest.config.ts
+new file mode 100644
+index 0000000..f8ca273
+--- /dev/null
++++ b/packages/contracts/vitest.config.ts
+@@ -0,0 +1,9 @@
++import { defineConfig } from "vitest/config";
++
++export default defineConfig({
++  test: {
++    include: ["src/**/*.test.ts"],
++    environment: "node",
++    passWithNoTests: true,
++  },
++});
+diff --git a/pnpm-workspace.yaml b/pnpm-workspace.yaml
+new file mode 100644
+index 0000000..3ff5faa
+--- /dev/null
++++ b/pnpm-workspace.yaml
+@@ -0,0 +1,3 @@
++packages:
++  - "apps/*"
++  - "packages/*"
+diff --git a/scripts/provision-tenant.ts b/scripts/provision-tenant.ts
+new file mode 100644
+index 0000000..9eb2d09
+--- /dev/null
++++ b/scripts/provision-tenant.ts
+@@ -0,0 +1,3 @@
++// TODO: T8.1 (DEFERRED post-v1) — full tenant provisioning script
++// This is a placeholder; T1.7 docker-compose uses a thin inline seed instead.
++// See: docs/kb/bootstrap-plan.md §6 flagged conflict C3
+diff --git a/tsconfig.base.json b/tsconfig.base.json
+new file mode 100644
+index 0000000..44a43a9
+--- /dev/null
++++ b/tsconfig.base.json
+@@ -0,0 +1,23 @@
++{
++  "compilerOptions": {
++    "target": "ES2022",
++    "module": "NodeNext",
++    "moduleResolution": "NodeNext",
++    "lib": ["ES2022"],
++    "strict": true,
++    "noImplicitAny": true,
++    "strictNullChecks": true,
++    "noUnusedLocals": true,
++    "noUnusedParameters": true,
++    "noImplicitReturns": true,
++    "noFallthroughCasesInSwitch": true,
++    "exactOptionalPropertyTypes": true,
++    "declaration": true,
++    "declarationMap": true,
++    "sourceMap": true,
++    "esModuleInterop": true,
++    "allowSyntheticDefaultImports": true,
++    "forceConsistentCasingInFileNames": true,
++    "skipLibCheck": true
++  }
++}
+diff --git a/turbo.json b/turbo.json
+new file mode 100644
+index 0000000..3fbc895
+--- /dev/null
++++ b/turbo.json
+@@ -0,0 +1,37 @@
++{
++  "$schema": "https://turbo.build/schema.json",
++  "tasks": {
++    "lint": {
++      "dependsOn": [],
++      "outputs": []
++    },
++    "typecheck": {
++      "dependsOn": [],
++      "outputs": []
++    },
++    "test:unit": {
++      "dependsOn": ["typecheck"],
++      "outputs": ["coverage/**"]
++    },
++    "test:integration": {
++      "dependsOn": ["typecheck"],
++      "outputs": ["coverage/**"]
++    },
++    "test:security": {
++      "dependsOn": ["typecheck"],
++      "outputs": ["coverage/**"]
++    },
++    "test:e2e": {
++      "dependsOn": ["typecheck"],
++      "outputs": []
++    },
++    "build": {
++      "dependsOn": ["typecheck", "lint", "^build"],
++      "outputs": ["dist/**", ".next/**"]
++    },
++    "dev": {
++      "cache": false,
++      "persistent": true
++    }
++  }
++}

@@ -151,3 +151,13 @@
 [2026-06-15T13:45:15Z] [monitor] [Bootstrap obs done] pino logger+pino-http+Sentry no-op sink+error middleware wired into apps/api; SENTRY_DSN added to .env.example; lint/typecheck/unit/integration/build/security all green
 [2026-06-15T13:46:50Z] [orchestrator] [Usage checkpoint] phase=agent-post agent=monitor iteration=1
 [2026-06-15T13:46:50Z] [orchestrator] [Step 7 -> 8] monitor -> review+fix loop (subroutine 11)
+[2026-06-15T13:47:06Z] [orchestrator] [Loop] review+fix iteration 1
+[2026-06-15T13:47:06Z] [orchestrator] [Usage checkpoint] phase=review-start task=bootstrap iteration=1
+[2026-06-15T13:47:06Z] [orchestrator] [Usage checkpoint] phase=agent-pre agent=basic-reviewer task=bootstrap iteration=1 model=sonnet
+[2026-06-15T13:48:07Z] [basic-reviewer] [Bootstrap review started] Reading 73-file bootstrap diff (2670 lines) for scope + quality passes
+[2026-06-15T13:49:26Z] [basic-reviewer] [Bootstrap review complete] 73 files reviewed; 0 CRIT/HIGH, 5 MED, 6 LOW; findings written to docs/tasks/bootstrap-findings.md
+[2026-06-15T13:50:43Z] [orchestrator] [Usage checkpoint] phase=review-end task=bootstrap iteration=1
+[2026-06-15T13:50:43Z] [orchestrator] [Review result] iteration 1: 0 CRIT, 0 HIGH, 5 MED, 5 LOW -> exit condition met; optional polish fix-pass dispatched
+[2026-06-15T13:50:43Z] [orchestrator] [Usage checkpoint] phase=fix-start task=bootstrap iteration=1
+[2026-06-15T13:50:43Z] [orchestrator] [Haiku skipped] agent=coder task=bootstrap reason=">5 findings (10 MED+LOW), H-FIX requires <=5"
+[2026-06-15T13:50:43Z] [orchestrator] [Usage checkpoint] phase=agent-pre agent=coder task=bootstrap iteration=5 model=sonnet

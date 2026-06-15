@@ -22,7 +22,7 @@ const noLlmSdkOutsideAdapters = {
     },
   },
   create(context) {
-    const filePath = context.getFilename().replace(/\\/g, "/");
+    const filePath = context.filename.replace(/\\/g, "/");
     return {
       ImportDeclaration(node) {
         const source = node.source.value;

@@ -35,6 +35,9 @@ WORKDIR /app
 # Copy production-pruned node_modules from the builder's deploy output
 COPY --from=builder /prod/api/node_modules ./node_modules
 
+# package.json is required for exports-map resolution at runtime
+COPY --from=builder /prod/api/package.json ./package.json
+
 # Copy compiled output
 COPY --from=builder /build/apps/api/dist ./dist
 

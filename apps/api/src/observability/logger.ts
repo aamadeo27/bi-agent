@@ -38,8 +38,8 @@ const REDACT_PATHS = [
   "*.secret",
   "*.key",
   "*.credential",
-  'req.headers.authorization',
-  'req.headers.cookie',
+  "req.headers.authorization",
+  "req.headers.cookie",
   'res.headers["set-cookie"]',
 ];
 

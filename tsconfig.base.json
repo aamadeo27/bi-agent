@@ -1,4 +1,8 @@
 {
+  // module/moduleResolution default to NodeNext for the API (strict ESM with .js extensions).
+  // Non-API packages (apps/web, packages/contracts) override both to ESNext/Bundler in their
+  // own tsconfig.json — Vite/esbuild handle resolution; NodeNext would reject bare specifiers.
+  // Every new package that is NOT bundler-processed must keep NodeNext or set it explicitly.
   "compilerOptions": {
     "target": "ES2022",
     "module": "NodeNext",
