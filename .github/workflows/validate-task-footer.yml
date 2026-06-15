@@ -23,4 +23,4 @@ jobs:
           # subject = PR title, body = PR body.
           tmp="$(mktemp)"
           printf '%s\n\n%s\n' "$PR_TITLE" "$PR_BODY" > "$tmp"
-          bash .claude/hooks/validate-task-footer.sh "$tmp"
+          bash .github/scripts/validate-task-footer.sh "$tmp"
