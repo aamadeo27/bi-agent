@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { SseBlockEventSchema } from "./permission-block.js";
-import { SseErrorEventSchema } from "./error-codes.js";
+import { SseBlockEventSchema, type SseBlockEvent } from "./permission-block.js";
+import { SseErrorEventSchema, type SseErrorEvent } from "./error-codes.js";
 
 export const ColumnTypeSchema = z.enum([
   "string",
@@ -67,15 +67,9 @@ export const SseDoneEventSchema = z.object({
 });
 export type SseDoneEvent = z.infer<typeof SseDoneEventSchema>;
 
-// Re-export block + error event types so consumers only need to import from chat
-export { SseBlockEventSchema } from "./permission-block.js";
-export type { SseBlockEvent } from "./permission-block.js";
-export { SseErrorEventSchema } from "./error-codes.js";
-export type { SseErrorEvent } from "./error-codes.js";
-
 /**
  * All valid SSE `event:` names for this API.
- * The `satisfies` constraint below ensures every name has a registered schema.
+ * The `satisfies` constraint on SSE_EVENT_SCHEMAS ensures every name has a registered schema.
  */
 export type SseEventName =
   | "meta"
@@ -89,8 +83,8 @@ export type SseEventDataMap = {
   meta: SseMetaEvent;
   token: SseTokenEvent;
   result: SseResultEvent;
-  block: z.infer<typeof SseBlockEventSchema>;
-  error: z.infer<typeof SseErrorEventSchema>;
+  block: SseBlockEvent;
+  error: SseErrorEvent;
   done: SseDoneEvent;
 };
 

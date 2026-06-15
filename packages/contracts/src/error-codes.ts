@@ -63,4 +63,4 @@ export type AssertErrorCodesExhaustive = [ErrorCode] extends [AppError["code"]]
     ? true
     : never
   : never;
-export const _assertErrorCodesExhaustive: AssertErrorCodesExhaustive = true;
+export const assertErrorCodesExhaustive: AssertErrorCodesExhaustive = true;
