@@ -1,10 +1,10 @@
 ---
 generated: 2026-06-15T14:00:00Z
 generator: devteam/status-updater@v1
-commit: f035159
-task: bootstrap
+commit: a2f50e5
+task: T1.3
 phase: implementation
-overall_pct: 5
+overall_pct: 8
 health: green
 ---
 
@@ -18,7 +18,7 @@ health: green
 ## Features
 | ID  | Feature | Status | Tests | Notes |
 |-----|---------|--------|-------|-------|
-| F1  | Foundation & scaffolding (epic 001) | partial | smoke | Bootstrap done: monorepo scaffold (T1.1), real CI (T1.5), Dockerfiles+compose (T1.6/T1.7). Remaining: control-plane DB+Prisma schema (T1.2), full contracts (T1.3), web shell (T1.4) |
+| F1  | Foundation & scaffolding (epic 001) | partial | smoke | Done: scaffold (T1.1), CI (T1.5), Docker+compose (T1.6/T1.7), **contracts (T1.3, PR #1)**. Remaining: control-plane DB+Prisma schema (T1.2), web shell (T1.4) |
 | F2  | Auth & tenant isolation (epic 002) | todo | 0% | email+password + per-tenant OIDC, admin-invite provisioning, tenant-scope middleware, short-lived JWT |
 | F3  | RBAC & admin (epic 003) | todo | 0% | custom roles, schema/table/column grants, per-role capability flags (query-inspect), admin UI (S4–S6) |
 | F4  | Data sources & restricted-credential proxy (epic 004) | todo | 0% | pg/mysql/bq/rest connectors, KMS credential vault, Query Proxy L2 (raw drivers, least-privilege) |
