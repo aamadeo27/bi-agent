@@ -171,3 +171,4 @@
 [2026-06-15T13:57:31Z] [orchestrator] [Usage checkpoint] phase=agent-post agent=basic-reviewer task=bootstrap iteration=2
 [2026-06-15T13:57:31Z] [orchestrator] [Review result] iteration 2 re-review: 0 CRIT/0 HIGH; all 10 fixes confirmed; loop clean
 [2026-06-15T13:57:31Z] [orchestrator] [Step 8 -> 9] review+fix loop clean -> final commit + push
+[2026-06-15T13:58:55Z] [orchestrator] [CI fix] pnpm/action-setup@v4 rejected version:9 + packageManager both set; removed version pin (reads packageManager); GitHub-only, not caught locally
