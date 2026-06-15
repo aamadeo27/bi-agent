@@ -1,0 +1,36 @@
+# Docker build context = repo root (compose `context: .`, dockerfile: apps/*/Dockerfile).
+# Docker reads THIS file (the context-root .dockerignore), not apps/*/.dockerignore.
+# Exclude node_modules so the pnpm workspace symlinks (e.g. node_modules/@bi/contracts ->
+# packages/contracts) are NOT loaded into the build context — they are dangling relative
+# symlinks Docker cannot resolve ("invalid file request"). pnpm install runs inside the
+# image and regenerates node_modules from the committed lockfile + workspace sources.
+# Keep ALL package.json, source, pnpm-lock.yaml, pnpm-workspace.yaml so frozen install works.
+
+**/node_modules
+**/dist
+**/build
+**/.turbo
+**/coverage
+**/.vite
+**/playwright-report
+**/test-results
+
+.git
+.github
+docs
+
+# logs (keep none in image)
+**/*.log
+
+# secrets / local env (never in an image layer)
+.env
+.env.local
+.env.*.local
+**/*.pem
+**/*.key
+
+# editor / OS
+.idea
+.vscode
+.DS_Store
+Thumbs.db

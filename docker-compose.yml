@@ -23,7 +23,11 @@ services:
     volumes:
       - db_data:/var/lib/postgresql/data
     ports:
-      - "127.0.0.1:5432:5432"
+      # Host port is configurable to avoid conflicts with a local Postgres or
+      # Windows/Hyper-V reserved port ranges. Override with DB_HOST_PORT (shell
+      # env or a compose `.env` file). The container port stays 5432; the API
+      # reaches the DB internally as db:5432 regardless of this mapping.
+      - "127.0.0.1:${DB_HOST_PORT:-5432}:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d bi_platform"]
       interval: 5s
@@ -44,8 +48,13 @@ services:
       # compose service name rather than `localhost` (which is the host value in
       # .env.local and won't resolve inside the container network).
       DATABASE_URL: postgresql://postgres:postgres@db:5432/bi_platform
+      # The built image is production-pruned (no devDeps), so pino-pretty is absent.
+      # Force production logging (JSON) here; pretty dev logs are for the host
+      # `pnpm --filter api dev` path where pino-pretty is installed.
+      NODE_ENV: production
     ports:
-      - "127.0.0.1:3000:3000"
+      # Host port configurable (see DB_HOST_PORT note above); override with API_HOST_PORT.
+      - "127.0.0.1:${API_HOST_PORT:-3000}:3000"
     depends_on:
       db:
         condition: service_healthy

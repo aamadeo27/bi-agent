@@ -1,24 +1,24 @@
 ---
-generated: 2026-06-14T20:05:00Z
+generated: 2026-06-15T14:00:00Z
 generator: devteam/status-updater@v1
-commit: bootstrap
-task: none
-phase: design
-overall_pct: 0
+commit: f035159
+task: bootstrap
+phase: implementation
+overall_pct: 5
 health: green
 ---
 
 # Project Status
 
 ## Snapshot
-- Phase: design (2/5) — pre-project planning complete; implementation not started
-- Overall: 0%
+- Phase: implementation (3/5) — pre-project + bootstrap complete; feature epics not started
+- Overall: 5% (foundation scaffold + CI + dev infra in place; no feature logic yet)
 - Health: green
 
 ## Features
 | ID  | Feature | Status | Tests | Notes |
 |-----|---------|--------|-------|-------|
-| F1  | Foundation & scaffolding (epic 001) | todo | 0% | pnpm/Turborepo monorepo, contracts pkg, Postgres+Prisma (control plane), Dockerfiles, docker-compose, CI |
+| F1  | Foundation & scaffolding (epic 001) | partial | smoke | Bootstrap done: monorepo scaffold (T1.1), real CI (T1.5), Dockerfiles+compose (T1.6/T1.7). Remaining: control-plane DB+Prisma schema (T1.2), full contracts (T1.3), web shell (T1.4) |
 | F2  | Auth & tenant isolation (epic 002) | todo | 0% | email+password + per-tenant OIDC, admin-invite provisioning, tenant-scope middleware, short-lived JWT |
 | F3  | RBAC & admin (epic 003) | todo | 0% | custom roles, schema/table/column grants, per-role capability flags (query-inspect), admin UI (S4–S6) |
 | F4  | Data sources & restricted-credential proxy (epic 004) | todo | 0% | pg/mysql/bq/rest connectors, KMS credential vault, Query Proxy L2 (raw drivers, least-privilege) |
@@ -49,10 +49,10 @@ Status values: `todo | partial | done | blocked`.
 - [ ] Observability (OpenTelemetry + pino; P1 gate-bypass alert A1)
 
 ## Dimensions
-- Requirements coverage: 0% (spec documented 100%; implementation not started)
-- Test coverage: 0%
-- CI health: unknown (pipeline not yet built — T1.5)
-- Doc freshness: ok (spec generated 2026-06-14)
+- Requirements coverage: ~3% (spec documented 100%; only scaffold implemented)
+- Test coverage: smoke only (unit/integration/e2e smoke tests green; no feature coverage)
+- CI health: green (real pipeline — 7 jobs passing on main, run 27551499499)
+- Doc freshness: ok (bootstrap 2026-06-15)
 - Velocity: n/a
 
 ## Risks
