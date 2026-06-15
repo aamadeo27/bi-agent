@@ -1,4 +1,3 @@
-// TODO: Full schema definition in contracts.md §permission-block
 import { z } from "zod";
 
 export const PermissionBlockSchema = z.object({

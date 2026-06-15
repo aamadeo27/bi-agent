@@ -1,4 +1,5 @@
 import type { ErrorRequestHandler, Request, Response, NextFunction } from "express";
+import type { ApiErrorResponse } from "@bi/contracts";
 import { logger } from "./logger.js";
 import { captureError } from "./error-sink.js";
 
@@ -8,12 +9,11 @@ import { captureError } from "./error-sink.js";
  * - Logs the error via pino (full detail server-side, including stack).
  * - Forwards it to the error sink when one is enabled (no-op otherwise).
  * - Returns a safe JSON error shape to the client: no stack, no internal
- *   message leakage.
+ *   message leakage. Shape matches ApiErrorResponse from @bi/contracts.
  *
- * TODO(epic-007 / T7.3): map onto the contracts `error-codes` taxonomy
+ * TODO(epic-007 / T7.3): map onto the full error-codes taxonomy
  * (GATE_BLOCK / VALIDATION / DATA_SOURCE / LLM_ERROR / ...) and emit
- * `app.error.count{error_code,class}` (monitoring.md §1.4). For the bootstrap
- * skeleton every unhandled error is treated as INTERNAL.
+ * `app.error.count{error_code,class}` (monitoring.md §1.4).
  */
 export const errorHandler: ErrorRequestHandler = (
   err: unknown,
@@ -30,10 +30,9 @@ export const errorHandler: ErrorRequestHandler = (
   logger.error({ err }, "unhandled request error");
   captureError(err);
 
-  res.status(500).json({
-    error: {
-      code: "INTERNAL",
-      message: "Internal server error",
-    },
-  });
+  const body: ApiErrorResponse = {
+    code: "INTERNAL",
+    message: "Internal server error",
+  };
+  res.status(500).json(body);
 };

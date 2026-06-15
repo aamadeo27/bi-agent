@@ -1,4 +1,3 @@
-// TODO: Full schema definition in contracts.md §audit-event
 import { z } from "zod";
 
 export const AuditEventTypeSchema = z.enum([
@@ -24,6 +23,7 @@ export const AuditEventSchema = z.object({
   type: AuditEventTypeSchema,
   outcome: z.enum(["success", "blocked", "error"]),
   dataSourceId: z.string().optional(),
+  /** Must never contain queried row values (PII guard). */
   detail: z.record(z.unknown()),
   ip: z.string().optional(),
 });

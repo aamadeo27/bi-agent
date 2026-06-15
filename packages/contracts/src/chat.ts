@@ -1,5 +1,6 @@
-// TODO: Full schema definition in contracts.md §chat-api and §result-envelope
 import { z } from "zod";
+import { SseBlockEventSchema, type SseBlockEvent } from "./permission-block.js";
+import { SseErrorEventSchema, type SseErrorEvent } from "./error-codes.js";
 
 export const ColumnTypeSchema = z.enum([
   "string",
@@ -29,6 +30,22 @@ export const ResultEnvelopeSchema = z.object({
 });
 export type ResultEnvelope = z.infer<typeof ResultEnvelopeSchema>;
 
+/** Request body for POST /api/conversations/:conversationId/messages */
+export const SendMessageRequestSchema = z.object({
+  text: z.string().min(1),
+});
+export type SendMessageRequest = z.infer<typeof SendMessageRequestSchema>;
+
+/** Item in GET /api/conversations list */
+export const ConversationSummarySchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  updatedAt: z.string().datetime(),
+});
+export type ConversationSummary = z.infer<typeof ConversationSummarySchema>;
+
+// SSE event payload schemas
+
 export const SseMetaEventSchema = z.object({
   messageId: z.string(),
   queryType: z.enum(["sql", "rest"]),
@@ -49,3 +66,34 @@ export const SseDoneEventSchema = z.object({
   messageId: z.string(),
 });
 export type SseDoneEvent = z.infer<typeof SseDoneEventSchema>;
+
+/**
+ * All valid SSE `event:` names for this API.
+ * The `satisfies` constraint on SSE_EVENT_SCHEMAS ensures every name has a registered schema.
+ */
+export type SseEventName =
+  | "meta"
+  | "token"
+  | "result"
+  | "block"
+  | "error"
+  | "done";
+
+export type SseEventDataMap = {
+  meta: SseMetaEvent;
+  token: SseTokenEvent;
+  result: SseResultEvent;
+  block: SseBlockEvent;
+  error: SseErrorEvent;
+  done: SseDoneEvent;
+};
+
+// Compile-time check: every SseEventName has exactly one schema in this map.
+export const SSE_EVENT_SCHEMAS = {
+  meta: SseMetaEventSchema,
+  token: SseTokenEventSchema,
+  result: SseResultEventSchema,
+  block: SseBlockEventSchema,
+  error: SseErrorEventSchema,
+  done: SseDoneEventSchema,
+} satisfies Record<SseEventName, z.ZodTypeAny>;

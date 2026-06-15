@@ -1,6 +1,6 @@
-// TODO: Full schema definition in contracts.md §auth-api
 import { z } from "zod";
 
+/** Claims embedded in the short-lived JWT access token (~15m). */
 export const JwtClaimsSchema = z.object({
   sub: z.string(),
   tenantId: z.string(),
@@ -15,11 +15,20 @@ export const LoginRequestSchema = z.object({
 });
 export type LoginRequest = z.infer<typeof LoginRequestSchema>;
 
+/** POST /api/auth/login response — refresh token is set as httpOnly cookie. */
 export const LoginResponseSchema = z.object({
   accessToken: z.string(),
 });
 export type LoginResponse = z.infer<typeof LoginResponseSchema>;
 
+/** POST /api/auth/invite/accept */
+export const InviteAcceptRequestSchema = z.object({
+  token: z.string(),
+  password: z.string().min(8).optional(),
+});
+export type InviteAcceptRequest = z.infer<typeof InviteAcceptRequestSchema>;
+
+/** GET /api/me */
 export const MeResponseSchema = z.object({
   user: z.object({
     id: z.string(),
