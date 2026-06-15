@@ -2,8 +2,9 @@
 # DevTeam managed — regenerated on every deploy
 .claude/
 
-# DevTeam config — not tracked per-machine
-.devteam/
+# DevTeam config — per-machine state is ignored, but the CI/CD gate config is committed
+.devteam/*
+!.devteam/cicd.json
 
 # Dependencies
 node_modules/

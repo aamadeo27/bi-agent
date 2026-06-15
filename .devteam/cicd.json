@@ -1,0 +1,15 @@
+{
+  "remote": "origin",
+  "integration_branch": "main",
+  "required_checks": [
+    "lint",
+    "typecheck",
+    "unit",
+    "integration",
+    "build",
+    "security-tests"
+  ],
+  "poll_interval_seconds": 15,
+  "poll_timeout_seconds": 1800,
+  "max_ci_fix_attempts": 3
+}
