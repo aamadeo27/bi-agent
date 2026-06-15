@@ -80,3 +80,24 @@
 [2026-06-14T23:59:12Z] [orchestrator] [Usage checkpoint] phase=sequence-end sequence=pre-project
 [2026-06-14T23:59:12Z] [orchestrator] [Model usage summary] sequence=pre-project haiku=1 sonnet=3 opus=4 haiku-skipped=0
 [2026-06-14T23:59:12Z] [orchestrator] [Sequence done] pre-project
+[2026-06-15T00:44:11Z] [orchestrator] [Task-id convention] adopted globally-unique T<epic>.<task> stems; 40 files renamed (git mv), all refs/deps/waves/branching.md/devops.md/monitoring.md updated; commit-msg hook (user-updated) + post-merge resolver now consistent; amended bootstrap -> e6f25f5 (--no-verify, user-authorized scaffolding exception)
+[2026-06-15T00:59:30Z] [orchestrator] [Sequence started] bootstrap mode=autonomous
+[2026-06-15T00:59:30Z] [orchestrator] [Usage checkpoint] phase=sequence-start sequence=bootstrap
+[2026-06-15T01:05:50Z] [orchestrator] [Config] run=autonomous repo=bi-agent owner=aamadeo27 visibility=public
+[2026-06-15T01:05:50Z] [orchestrator] [Usage checkpoint] phase=agent-pre agent=gf_devops-engineer iteration=1 model=sonnet
+[2026-06-15T01:10:00Z] [gf_devops-engineer] [Started] Bootstrap confirmation pass: reading devops.md, tech-stack.md, conventions, epic 001 tasks
+[2026-06-15T01:12:30Z] [gf_devops-engineer] [Deliverable] Wrote docs/kb/bootstrap-plan.md: monorepo tree, local dev flow, turbo task graph, scaffold order, 5 flagged conflicts
+[2026-06-15T01:12:45Z] [gf_devops-engineer] [KB updated] Added bootstrap-plan.md to docs/kb/README.md index
+[2026-06-15T01:12:50Z] [gf_devops-engineer] [No conflicts blocking] 5 minor conflicts resolved; no task changes required; scaffold order confirmed
+[2026-06-15T01:13:00Z] [gf_devops-engineer] [Finished] Bootstrap dev-infra confirmation complete; ready for coder
+[2026-06-15T01:11:08Z] [orchestrator] [Usage checkpoint] phase=agent-post agent=gf_devops-engineer iteration=1
+[2026-06-15T01:11:08Z] [orchestrator] [BLOCKER] bootstrap step 2 needs agents coder/tester/basic-reviewer; none defined in .claude/agents nor available as subagent types; paused for user decision
+[2026-06-15T01:35:42Z] [orchestrator] [Blocker resolving] coder/tester/basic-reviewer(+conflict-resolver) now present on disk but not registered this session; user to reload window then re-run /sequence bootstrap
+[2026-06-15T01:35:42Z] [orchestrator] [Sequence paused] bootstrap awaiting window reload to register new agents (resume at step 2; step 1 bootstrap-plan.md saved)
+[2026-06-15T01:56:52Z] [orchestrator] [Sequence resumed] bootstrap after window reload; agents registered; resuming at step 2
+[2026-06-15T01:56:52Z] [orchestrator] [Step 1 -> 2] devops dev-infra confirm -> repo init + CI stub
+[2026-06-15T01:57:38Z] [orchestrator] [Usage checkpoint] phase=agent-pre agent=coder iteration=1 model=sonnet
+[2026-06-15T01:57:38Z] [coder] [Started] Bootstrap step 2: writing .gitignore and .github/workflows/ci.yml; no git ops
+[2026-06-15T01:57:38Z] [coder] [Deliverable] .gitignore: extended existing file with pnpm+Turborepo+Node/TS+Vite+Prisma ignores; DevTeam.log and .env.example remain tracked
+[2026-06-15T01:57:38Z] [coder] [Deliverable] .github/workflows/ci.yml: minimal passing stub (echo placeholder); triggers push+pull_request
+[2026-06-15T01:57:38Z] [coder] [Finished] Two files written; no git commands run; no commits; no tests (stub files only)

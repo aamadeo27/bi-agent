@@ -4,3 +4,47 @@
 
 # DevTeam config — not tracked per-machine
 .devteam/
+
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+build/
+.turbo/
+apps/web/dist/
+apps/web/.vite/
+*.tsbuildinfo
+
+# Env / secrets — .env.example IS committed; all others are not
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# Prisma — migrations ARE committed; local SQLite DBs are not
+prisma/*.db
+
+# Test / coverage
+coverage/
+playwright-report/
+test-results/
+
+# Logs — DevTeam.log IS committed; tool-specific debug logs are not
+npm-debug.log*
+pnpm-debug.log*
+logs/
+
+# IaC local state (Epic 008, deferred)
+*.tfstate
+*.tfstate.*
+.terraform/
+*.tfvars
+
+# OS / editor junk
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
