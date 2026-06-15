@@ -31,7 +31,8 @@ coverage/
 playwright-report/
 test-results/
 
-# Logs — DevTeam.log IS committed; tool-specific debug logs are not
+# Logs — DevTeam.log is local-only monitoring (NOT committed), plus debug logs
+DevTeam.log
 npm-debug.log*
 pnpm-debug.log*
 logs/
@@ -48,4 +49,3 @@ Thumbs.db
 .idea/
 .vscode/*
 !.vscode/extensions.json
-DevTeam.log
