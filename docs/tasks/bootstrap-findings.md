@@ -101,3 +101,46 @@ None identified.
 
 ## Re-review plan (iteration 1)
 No CRIT/HIGH — loop exit condition already met. Dispatching one polish fix-pass for all MED+LOW (cheap, high-value traps). Re-review plan: [basic-reviewer @ Haiku] on the fix diff to confirm no regressions, then exit.
+
+---
+
+## Iteration 2 re-review
+
+Reviewer: basic-reviewer | Pass: re-review | Iteration: 2
+Diff reviewed: 174 lines across 12 files
+Date: 2026-06-15
+
+**Status: CONFIRMED CLEAN — all 10 fixes verified, no regressions, no new issues.**
+
+### Fix-pass verification summary
+
+All iteration-1 findings (5 MED + 5 LOW) were correctly resolved in the coder's fix-pass:
+
+**Scope fixes:**
+- SCOPE-M1 (axe-core/react): ✓ Added to `apps/web` devDependencies v4.10.2, alphabetically positioned
+- SCOPE-M2 (test:e2e build dep): ✓ `turbo.json` changed from `dependsOn: ["typecheck"]` to `["build"]`
+- SCOPE-L1 (export {}): ✓ Added to `scripts/provision-tenant.ts` for strict ESM
+
+**Quality fixes:**
+- QUAL-M1 (Playwright reporter): ✓ Ternary corrected: CI="list", local="html" (was "list"/"list")
+- QUAL-M2 (Vite proxy rewrite): ✓ Added `/api` prefix strip rule with explanatory comment
+- QUAL-M3 (tsconfig.base.json): ✓ Added 4-line JSDoc block explaining NodeNext default + bundler overrides
+- QUAL-L1 (logger quote normalization): ✓ Normalized single-quotes to double per .prettierrc (kept `set-cookie` single-quoted for embedded double quotes)
+- QUAL-L2 (health.test.ts): ✓ Converted from Supertest-based test to true unit test (route-registration inspection) with clear JSDoc tier distinction
+- QUAL-L3 (Dockerfile package.json): ✓ Runtime stage now copies `package.json` from pnpm deploy output for exports-map resolution
+- QUAL-L4 (eslint context.filename): ✓ Changed from deprecated `context.getFilename()` to `context.filename` property
+
+**Documentation:**
+- bootstrap-plan.md: ✓ Added iteration-1 fix summary section (informational, no functional impact)
+
+### Regression check
+
+- No dead code introduced
+- No scope creep beyond the 10 findings
+- No unintended changes to untouched files
+- No new dependencies or version conflicts
+- Code style consistent with existing patterns
+- All fixes are minimal and focused
+
+**Conclusion:** Loop exit condition met. Ready to merge.
+

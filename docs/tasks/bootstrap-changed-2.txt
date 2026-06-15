@@ -1,0 +1,11 @@
+apps/api/Dockerfile
+apps/api/src/health.test.ts
+apps/api/src/observability/logger.ts
+apps/web/package.json
+apps/web/playwright.config.ts
+apps/web/vite.config.ts
+docs/kb/bootstrap-plan.md
+eslint.config.js
+scripts/provision-tenant.ts
+tsconfig.base.json
+turbo.json

@@ -161,3 +161,13 @@
 [2026-06-15T13:50:43Z] [orchestrator] [Usage checkpoint] phase=fix-start task=bootstrap iteration=1
 [2026-06-15T13:50:43Z] [orchestrator] [Haiku skipped] agent=coder task=bootstrap reason=">5 findings (10 MED+LOW), H-FIX requires <=5"
 [2026-06-15T13:50:43Z] [orchestrator] [Usage checkpoint] phase=agent-pre agent=coder task=bootstrap iteration=5 model=sonnet
+[2026-06-15T13:56:13Z] [orchestrator] [Usage checkpoint] phase=fix-end task=bootstrap iteration=1
+[2026-06-15T13:56:13Z] [orchestrator] [Loop] review+fix iteration 2 (re-review of fix diff)
+[2026-06-15T13:56:13Z] [orchestrator] [Usage checkpoint] phase=review-start task=bootstrap iteration=2
+[2026-06-15T13:56:13Z] [orchestrator] [Haiku route] agent=basic-reviewer task=bootstrap iteration=2 trigger=H-RR reason="re-review of 174-line fix diff, non-security paths"
+[2026-06-15T13:56:13Z] [orchestrator] [Usage checkpoint] phase=agent-pre agent=basic-reviewer task=bootstrap iteration=2 model=haiku
+[2026-06-15T13:56:58Z] [basic-reviewer] [bootstrap re-review iteration 2] All 10 fixes verified clean, no regressions, loop exit condition met
+[2026-06-15T13:57:31Z] [orchestrator] [Usage checkpoint] phase=review-end task=bootstrap iteration=2
+[2026-06-15T13:57:31Z] [orchestrator] [Usage checkpoint] phase=agent-post agent=basic-reviewer task=bootstrap iteration=2
+[2026-06-15T13:57:31Z] [orchestrator] [Review result] iteration 2 re-review: 0 CRIT/0 HIGH; all 10 fixes confirmed; loop clean
+[2026-06-15T13:57:31Z] [orchestrator] [Step 8 -> 9] review+fix loop clean -> final commit + push

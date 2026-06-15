@@ -1,0 +1,174 @@
+diff --git a/apps/api/Dockerfile b/apps/api/Dockerfile
+index 63fa903..b5bd087 100644
+--- a/apps/api/Dockerfile
++++ b/apps/api/Dockerfile
+@@ -35,6 +35,9 @@ WORKDIR /app
+ # Copy production-pruned node_modules from the builder's deploy output
+ COPY --from=builder /prod/api/node_modules ./node_modules
+ 
++# package.json is required for exports-map resolution at runtime
++COPY --from=builder /prod/api/package.json ./package.json
++
+ # Copy compiled output
+ COPY --from=builder /build/apps/api/dist ./dist
+ 
+diff --git a/apps/api/src/health.test.ts b/apps/api/src/health.test.ts
+index 94fe158..12398c0 100644
+--- a/apps/api/src/health.test.ts
++++ b/apps/api/src/health.test.ts
+@@ -1,11 +1,31 @@
+ import { describe, it, expect } from "vitest";
+-import request from "supertest";
+ import { app } from "./index.js";
+ 
+-describe("GET /health", () => {
+-  it("returns 200 with status ok", async () => {
+-    const res = await request(app).get("/health");
+-    expect(res.status).toBe(200);
+-    expect(res.body).toEqual({ status: "ok" });
++/**
++ * Unit test — verifies the /health route is registered on the Express app
++ * without making an HTTP call. True unit scope: no network, no Supertest.
++ *
++ * Tier distinction vs health.integration.test.ts:
++ *   - THIS file: route registration check only (pure in-process, no I/O)
++ *   - health.integration.test.ts: end-to-end HTTP call via Supertest confirming
++ *     the full handler chain (middleware, JSON serialization, status code)
++ */
++describe("health route — unit (route registration)", () => {
++  it("registers GET /health on the Express router stack", () => {
++    // Express stores the layer stack on app._router after the first route is added.
++    // We access it via the internal property to confirm registration without I/O.
++    type ExpressLayer = { route?: { path: string; methods: Record<string, boolean> } };
++    // eslint-disable-next-line @typescript-eslint/no-explicit-any
++    const router = (app as any)._router as { stack: ExpressLayer[] } | undefined;
++    expect(router).toBeDefined();
++
++    const routes = (router?.stack ?? [])
++      .filter((layer) => layer.route)
++      .map((layer) => ({
++        path: layer.route!.path,
++        method: Object.keys(layer.route!.methods)[0],
++      }));
++
++    expect(routes).toContainEqual({ path: "/health", method: "get" });
+   });
+ });
+diff --git a/apps/api/src/observability/logger.ts b/apps/api/src/observability/logger.ts
+index 701d651..1b38994 100644
+--- a/apps/api/src/observability/logger.ts
++++ b/apps/api/src/observability/logger.ts
+@@ -38,8 +38,8 @@ const REDACT_PATHS = [
+   "*.secret",
+   "*.key",
+   "*.credential",
+-  'req.headers.authorization',
+-  'req.headers.cookie',
++  "req.headers.authorization",
++  "req.headers.cookie",
+   'res.headers["set-cookie"]',
+ ];
+ 
+diff --git a/apps/web/package.json b/apps/web/package.json
+index c1a8ca1..50f1ed4 100644
+--- a/apps/web/package.json
++++ b/apps/web/package.json
+@@ -26,6 +26,7 @@
+     "zod": "^3.23.8"
+   },
+   "devDependencies": {
++    "@axe-core/react": "^4.10.2",
+     "@playwright/test": "^1.61.0",
+     "@testing-library/jest-dom": "^6.6.3",
+     "@testing-library/react": "^16.0.1",
+diff --git a/apps/web/playwright.config.ts b/apps/web/playwright.config.ts
+index 35ac129..2f44c3a 100644
+--- a/apps/web/playwright.config.ts
++++ b/apps/web/playwright.config.ts
+@@ -22,8 +22,8 @@ export default defineConfig({
+   forbidOnly: !!process.env["CI"],
+   /* No retries in local dev; 1 retry on CI for transient flakes */
+   retries: process.env["CI"] ? 1 : 0,
+-  /* Reporter: list in CI for clean log lines; default (list+html) locally */
+-  reporter: process.env["CI"] ? "list" : "list",
++  /* Reporter: list in CI for clean log lines; html locally for interactive report */
++  reporter: process.env["CI"] ? "list" : "html",
+   use: {
+     /* Base URL matched to vite preview default port */
+     baseURL: "http://localhost:4173",
+diff --git a/apps/web/vite.config.ts b/apps/web/vite.config.ts
+index dac64e1..bbcff08 100644
+--- a/apps/web/vite.config.ts
++++ b/apps/web/vite.config.ts
+@@ -9,6 +9,8 @@ export default defineConfig({
+       "/api": {
+         target: process.env["VITE_API_URL"] ?? "http://localhost:3000",
+         changeOrigin: true,
++        // API routes have no /api prefix (e.g. /health, /auth/...) — strip it here
++        rewrite: (path) => path.replace(/^\/api/, ""),
+       },
+     },
+   },
+diff --git a/docs/kb/bootstrap-plan.md b/docs/kb/bootstrap-plan.md
+index 3564025..bd083ac 100644
+--- a/docs/kb/bootstrap-plan.md
++++ b/docs/kb/bootstrap-plan.md
+@@ -267,3 +267,9 @@ T1.1 (monorepo scaffold)
+ | C5 | **`test:e2e` turbo task** — devops.md lists `test:e2e` as a turbo task, but T1.5 acceptance criteria do not list it in `turbo.json`. T1.5 notes say E2E runs post-merge only. | devops.md §2.1 (turbo task list includes test:e2e) | T1.5.md (ACs list only 6 tasks; notes say E2E is separate job not a PR gate) | Define `test:e2e` in `turbo.json` (so it can run in the post-merge job) but do NOT add it to the PR required checks. T1.5 must add both the turbo task entry and the separate `on: push to main` job. Not a blocker — coder includes it. |
+ 
+ No critical blocker conflicts found. All five are resolved by the existing task notes or are implementation details for the coder.
++
++---
++
++## Bootstrap review fixes (iteration 1)
++
++Applied 2026-06-15 by coder fix-pass (iteration 1). All 5 MED + 5 LOW findings from `docs/tasks/bootstrap-findings.md` were resolved: `@axe-core/react` added to `apps/web` devDependencies (SCOPE-M1); `test:e2e` turbo task now depends on `build` so `vite preview` has dist available (SCOPE-M2); Playwright reporter ternary fixed to `"html"` locally and `"list"` in CI (QUAL-M1); Vite dev proxy now strips the `/api` prefix via a `rewrite` rule so API routes (`/health`, `/auth/...`) resolve correctly (QUAL-M2); `tsconfig.base.json` annotated with a comment explaining the NodeNext default and the Bundler override pattern required by web/contracts packages (QUAL-M3); `export {}` added to `scripts/provision-tenant.ts` for strict-ESM compliance (SCOPE-L1); `logger.ts` REDACT_PATHS normalized to double-quote style per `.prettierrc` (`singleQuote: false`), with the `set-cookie` entry kept single-quoted because it contains embedded double quotes (QUAL-L1); `apps/api/Dockerfile` runtime stage now copies `package.json` from the pnpm deploy output to support exports-map resolution (QUAL-L3); `eslint.config.js` custom rule updated from deprecated `context.getFilename()` to `context.filename` (QUAL-L4); `health.test.ts` converted to a true unit test (route registration inspection without Supertest) clearly distinguished from `health.integration.test.ts` which tests the full HTTP handler chain (QUAL-L2). All checks (`pnpm -w lint`, `pnpm -w typecheck`, `pnpm -w test:unit`, `pnpm -w test:integration`, `pnpm -w test:security`, `pnpm -w build`) exit 0.
+diff --git a/eslint.config.js b/eslint.config.js
+index 8e03f2c..c30e953 100644
+--- a/eslint.config.js
++++ b/eslint.config.js
+@@ -22,7 +22,7 @@ const noLlmSdkOutsideAdapters = {
+     },
+   },
+   create(context) {
+-    const filePath = context.getFilename().replace(/\\/g, "/");
++    const filePath = context.filename.replace(/\\/g, "/");
+     return {
+       ImportDeclaration(node) {
+         const source = node.source.value;
+diff --git a/scripts/provision-tenant.ts b/scripts/provision-tenant.ts
+index 9eb2d09..d776a6a 100644
+--- a/scripts/provision-tenant.ts
++++ b/scripts/provision-tenant.ts
+@@ -1,3 +1,5 @@
+ // TODO: T8.1 (DEFERRED post-v1) — full tenant provisioning script
+ // This is a placeholder; T1.7 docker-compose uses a thin inline seed instead.
+ // See: docs/kb/bootstrap-plan.md §6 flagged conflict C3
++
++export {};
+diff --git a/tsconfig.base.json b/tsconfig.base.json
+index 44a43a9..b68f90f 100644
+--- a/tsconfig.base.json
++++ b/tsconfig.base.json
+@@ -1,4 +1,8 @@
+ {
++  // module/moduleResolution default to NodeNext for the API (strict ESM with .js extensions).
++  // Non-API packages (apps/web, packages/contracts) override both to ESNext/Bundler in their
++  // own tsconfig.json — Vite/esbuild handle resolution; NodeNext would reject bare specifiers.
++  // Every new package that is NOT bundler-processed must keep NodeNext or set it explicitly.
+   "compilerOptions": {
+     "target": "ES2022",
+     "module": "NodeNext",
+diff --git a/turbo.json b/turbo.json
+index 3fbc895..ff0ed6e 100644
+--- a/turbo.json
++++ b/turbo.json
+@@ -22,7 +22,7 @@
+       "outputs": ["coverage/**"]
+     },
+     "test:e2e": {
+-      "dependsOn": ["typecheck"],
++      "dependsOn": ["build"],
+       "outputs": []
+     },
+     "build": {
