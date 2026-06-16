@@ -1,16 +1,40 @@
-// TODO: T1.2 — full Prisma schema for the control plane
-// See: docs/kb/contracts.md §rbac-model §audit-event, docs/kb/tech-stack.md §"Prisma + the credential model"
-
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["multiSchema"]
 }
 
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+  schemas  = ["platform"]
 }
 
-// Placeholder model — replace with full schema in T1.2
-model _Placeholder {
-  id String @id @default(cuid())
+/// Tenant registry — one row per provisioned tenant.
+model Tenant {
+  id          String       @id
+  slug        String       @unique @db.VarChar(63)
+  displayName String       @map("display_name") @db.VarChar(256)
+  status      TenantStatus @default(active)
+  createdAt   DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@map("tenants")
+  @@schema("platform")
+}
+
+enum TenantStatus {
+  active
+  suspended
+
+  @@schema("platform")
+}
+
+/// Global key-value configuration shared across all tenants.
+model GlobalConfig {
+  key       String   @id @db.VarChar(128)
+  value     Json
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@map("global_config")
+  @@schema("platform")
 }

@@ -5,8 +5,12 @@
       "dependsOn": [],
       "outputs": []
     },
+    "generate": {
+      "dependsOn": [],
+      "outputs": ["node_modules/.prisma/**"]
+    },
     "typecheck": {
-      "dependsOn": ["^build"],
+      "dependsOn": ["generate", "^build"],
       "outputs": []
     },
     "test:unit": {
