@@ -6,9 +6,9 @@ listed in each Task's `kb-refs` plus this index. Keep entries to pointers.
 ## Index
 
 - [system-design.md](system-design.md) — components, ask-question pipeline, permission gate, credential restriction, tenant isolation, Gemini provider abstraction, deployment topology.
-- [tech-stack.md](tech-stack.md) — per-component stack table (Express + Prisma confirmed) + the Prisma-vs-credential-model reconciliation.
-- [patterns.md](patterns.md) — provider abstraction, permission-gate middleware, restricted-credential proxy, query-validation guard, request-validation (Zod), streaming-sse (Express), tenant request scoping, error handling, auth flow.
-- [contracts.md](contracts.md) — chat/query API, RBAC schema (schema/table/column), query-result envelope, audit event shape, shared types.
+- [tech-stack/](tech-stack/README.md) — itemized: one file per component (`postgres`, `prisma`, `express`, …) + full comparison table in the index.
+- [patterns/](patterns/README.md) — itemized: one file per pattern (`multi-tenant-request-scoping`, `permission-gate-middleware`, …).
+- [contracts/](contracts/README.md) — itemized: one file per contract (`rbac-model`, `audit-event`, `chat-api`, …).
 - [devops.md](devops.md) — CI/CD pipeline, environments (dev/staging/prod), build/deploy strategy, DB migration + per-tenant schema provisioning, rollback, infra, env config, monitoring hooks, new tasks flagged.
 - [conventions/README.md](conventions/README.md) — naming, folder layout, conventions index.
 - [conventions/testing.md](conventions/testing.md) — testing conventions (used by every Task).
