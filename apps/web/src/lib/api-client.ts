@@ -13,7 +13,7 @@ const BASE = "/api";
  * Generic fetch wrapper. Throws a parsed `ApiErrorResponse` on non-2xx,
  * or a raw `{ code: "INTERNAL", message }` if the body is not JSON.
  */
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+async function request<T>(path: string, init?: Parameters<typeof fetch>[1]): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     ...init,
     headers: {

@@ -124,7 +124,6 @@ function dispatch(
   const handler = handlers[name as SseEventName];
   if (handler) {
     // Type-safe dispatch: schema validation above guarantees the shape matches.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (handler as (d: unknown) => void)(result.data);
   }
 }
