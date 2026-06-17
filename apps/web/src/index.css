@@ -4,8 +4,26 @@
 
 @layer base {
   :root {
-    /* Design tokens — primary navy #1E3A6E, accent teal #0EA5A0 */
-    --color-primary: #1e3a6e;
-    --color-accent: #0ea5a0;
+    /* Design tokens — docs/ui-ux-spec.md §1 */
+    --color-primary-900: #0f1c35;
+    --color-primary-800: #172a4e;
+    --color-primary-700: #1e3a6e;
+    --color-primary-600: #2554a0;
+    --color-primary-500: #3b72cc;
+    --color-primary-200: #c2d5f5;
+    --color-primary-50: #eef4fd;
+    --color-accent-500: #0ea5a0;
+    --color-accent-400: #14c4be;
+    --color-accent-100: #d0f5f4;
+    --color-semantic-success: #16a34a;
+    --color-semantic-warning: #d97706;
+    --color-semantic-error: #dc2626;
+    --color-semantic-info: #2563eb;
+  }
+
+  /* Focus ring — WCAG 2.1 Focus Appearance (enhanced) */
+  :focus-visible {
+    outline: 3px solid var(--color-primary-500);
+    outline-offset: 2px;
   }
 }
