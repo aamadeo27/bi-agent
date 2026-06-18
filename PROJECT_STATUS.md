@@ -1,24 +1,24 @@
 ---
-generated: 2026-06-15T14:00:00Z
+generated: 2026-06-17T00:00:00Z
 generator: devteam/status-updater@v1
-commit: a2f50e5
-task: T1.3
+commit: 7a3b2a4
+task: T1.4
 phase: implementation
-overall_pct: 8
+overall_pct: 13
 health: green
 ---
 
 # Project Status
 
 ## Snapshot
-- Phase: implementation (3/5) — pre-project + bootstrap complete; feature epics not started
-- Overall: 5% (foundation scaffold + CI + dev infra in place; no feature logic yet)
+- Phase: implementation (3/5) — **epic 001 (foundation) complete**; feature epics (002–007) not started
+- Overall: 13% (foundation done: scaffold + contracts + control-plane DB + web shell + CI + dev infra; no feature logic yet)
 - Health: green
 
 ## Features
 | ID  | Feature | Status | Tests | Notes |
 |-----|---------|--------|-------|-------|
-| F1  | Foundation & scaffolding (epic 001) | partial | smoke | Done: scaffold (T1.1), CI (T1.5), Docker+compose (T1.6/T1.7), **contracts (T1.3, PR #1)**. Remaining: control-plane DB+Prisma schema (T1.2), web shell (T1.4) |
+| F1  | Foundation & scaffolding (epic 001) | done | smoke | All 7 tasks merged: scaffold (T1.1), contracts (T1.3, PR #1), control-plane DB+Prisma (T1.2, PR #2), web shell (T1.4, PR #4), CI (T1.5), Docker+compose (T1.6/T1.7) |
 | F2  | Auth & tenant isolation (epic 002) | todo | 0% | email+password + per-tenant OIDC, admin-invite provisioning, tenant-scope middleware, short-lived JWT |
 | F3  | RBAC & admin (epic 003) | todo | 0% | custom roles, schema/table/column grants, per-role capability flags (query-inspect), admin UI (S4–S6) |
 | F4  | Data sources & restricted-credential proxy (epic 004) | todo | 0% | pg/mysql/bq/rest connectors, KMS credential vault, Query Proxy L2 (raw drivers, least-privilege) |
@@ -31,9 +31,9 @@ Status values: `todo | partial | done | blocked`.
 > Deferred post-v1 (not counted in scope): epic 008 (infra-ops / IaC + automated tenant provisioning — manual via `docs/DEPLOYMENT.md`); observability alerts A2–A12 + dashboards (T7.5).
 
 ## Architecture
-- [ ] Web SPA (React 18 + Vite, Recharts, Tailwind + Radix)
+- [x] Web SPA (React 18 + Vite, Recharts, Tailwind + Radix) — shell + S1–S11 routes + typed API/SSE client (T1.4)
 - [ ] API service (Express + Zod request validation)
-- [ ] Control-plane DB (PostgreSQL 16, schema-per-tenant, Prisma; control plane only)
+- [x] Control-plane DB (PostgreSQL 16, schema-per-tenant, Prisma; control plane only) — provisioning + withTenant scoping (T1.2)
 - [ ] Auth (email+password argon2id + per-tenant OIDC; short-lived JWT + rotating refresh)
 - [ ] RBAC permission model (schema/table/column grants; per-role capability flags)
 - [ ] Permission gate L1 (AST-based, pre-execution; block + explain)
