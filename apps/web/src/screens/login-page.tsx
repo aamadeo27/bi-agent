@@ -43,7 +43,7 @@ interface FieldProps {
   disabled?: boolean;
   required?: boolean;
   isInvalid?: boolean;
-  "aria-describedby"?: string;
+  "aria-describedby"?: string | undefined;
 }
 
 function Field({
