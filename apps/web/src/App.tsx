@@ -1,4 +1,5 @@
 import { Routes, Route, Navigate } from "react-router-dom";
+import { LoginPage } from "./screens/login-page";
 
 function PlaceholderPage({
   screenId,
@@ -20,16 +21,8 @@ function PlaceholderPage({
   );
 }
 
-// S1 — Login / Auth
-export function LoginPage() {
-  return (
-    <PlaceholderPage
-      screenId="S1"
-      title="Sign In"
-      note="Login / Auth — placeholder for T2.x auth implementation"
-    />
-  );
-}
+// S1 is now the real LoginPage (imported from screens/login-page)
+export { LoginPage };
 
 // S2 — Chat Workspace
 // S3 (Query Inspect Drawer) and S9 (Permission Block) are overlay components

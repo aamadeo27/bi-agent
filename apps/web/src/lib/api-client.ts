@@ -6,21 +6,48 @@ import type {
   GeneratedQueryView,
 } from "@bi/contracts";
 import { ApiErrorResponseSchema } from "@bi/contracts";
+import { getAccessToken, setAccessToken, clearAccessToken } from "./auth-store";
 
 const BASE = "/api";
 
+/** Paths that must NOT trigger the auto-refresh loop on 401. */
+const NO_REFRESH_PATHS = new Set(["/auth/login", "/auth/refresh", "/auth/logout"]);
+
 /**
- * Generic fetch wrapper. Throws a parsed `ApiErrorResponse` on non-2xx,
- * or a raw `{ code: "INTERNAL", message }` if the body is not JSON.
+ * Generic fetch wrapper. Injects Bearer token when available.
+ * On 401 (outside auth paths), attempts one silent token refresh.
+ * If refresh fails, clears token and redirects to /login?reason=session_expired.
+ * Throws a parsed `ApiErrorResponse` on non-2xx.
  */
-async function request<T>(path: string, init?: Parameters<typeof fetch>[1]): Promise<T> {
+async function request<T>(
+  path: string,
+  init?: Parameters<typeof fetch>[1],
+  { skipRefresh = false }: { skipRefresh?: boolean } = {},
+): Promise<T> {
+  const token = getAccessToken();
   const res = await fetch(`${BASE}${path}`, {
     ...init,
+    credentials: "include", // needed so the httpOnly refresh cookie is sent
     headers: {
       "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...init?.headers,
     },
   });
+
+  // Auto-refresh on 401 (once, outside auth paths)
+  if (res.status === 401 && !skipRefresh && !NO_REFRESH_PATHS.has(path)) {
+    try {
+      const refreshed = await refreshToken();
+      setAccessToken(refreshed.accessToken);
+      // Retry original request with new token
+      return request<T>(path, init, { skipRefresh: true });
+    } catch {
+      clearAccessToken();
+      window.location.href = "/login?reason=session_expired";
+      return undefined as T;
+    }
+  }
 
   if (!res.ok) {
     let errBody: unknown;
@@ -47,6 +74,38 @@ export async function login(req: LoginRequest): Promise<LoginResponse> {
     method: "POST",
     body: JSON.stringify(req),
   });
+}
+
+/**
+ * POST /api/auth/refresh → rotate access + refresh tokens.
+ * Called internally by the request wrapper on 401; also exported for explicit use.
+ */
+export async function refreshToken(): Promise<LoginResponse> {
+  return request<LoginResponse>("/auth/refresh", { method: "POST" }, { skipRefresh: true });
+}
+
+/** POST /api/auth/logout → revoke refresh token. */
+export async function logout(): Promise<void> {
+  return request<void>("/auth/logout", { method: "POST" }, { skipRefresh: true });
+}
+
+/**
+ * GET /api/auth/sso/:tenantSlug → whether OIDC is configured for the tenant.
+ * This endpoint is the natural prefix of /api/auth/sso/:tenant/start.
+ * NOTE: this is an implicit contract extension; see coder_summary concerns.
+ */
+export async function getTenantSsoConfig(
+  tenantSlug: string,
+): Promise<{ ssoEnabled: boolean }> {
+  return request<{ ssoEnabled: boolean }>(`/auth/sso/${encodeURIComponent(tenantSlug)}`);
+}
+
+/**
+ * Returns the absolute URL to initiate the OIDC code flow for a tenant.
+ * The browser should navigate to this URL (window.location.href = ...).
+ */
+export function getSsoStartUrl(tenantSlug: string): string {
+  return `${BASE}/auth/sso/${encodeURIComponent(tenantSlug)}/start`;
 }
 
 /** GET /api/me → current user + capabilities. */
