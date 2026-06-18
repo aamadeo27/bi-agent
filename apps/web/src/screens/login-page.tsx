@@ -5,14 +5,10 @@ import { login, getTenantSsoConfig, getSsoStartUrl } from "../lib/api-client";
 import { setAccessToken } from "../lib/auth-store";
 import { getTenantSlug } from "../lib/tenant";
 
-// ─── Types ───────────────────────────────────────────────────────────────────
-
-type FormState = "idle" | "loading" | "error";
-
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function errorMessage(err: unknown): string {
-  // Raw Error instances (e.g. network failures) get a user-friendly generic message
+  // Raw Error instances (e.g. network failures) → generic user-friendly message
   if (err instanceof Error) {
     return "An unexpected error occurred. Please try again.";
   }
@@ -27,9 +23,9 @@ function errorMessage(err: unknown): string {
 
 function SessionExpiredBanner() {
   return (
+    // role="alert" already implies aria-live="assertive"; no extra aria-live needed.
     <div
       role="alert"
-      aria-live="polite"
       className="mb-4 rounded-md border border-semantic-warning/40 bg-semantic-warning/10 px-4 py-3 text-body text-neutral-700"
     >
       Your session has expired. Please sign in again.
@@ -46,6 +42,7 @@ interface FieldProps {
   autoComplete?: string;
   disabled?: boolean;
   required?: boolean;
+  isInvalid?: boolean;
   "aria-describedby"?: string;
 }
 
@@ -58,6 +55,7 @@ function Field({
   autoComplete,
   disabled,
   required,
+  isInvalid,
   "aria-describedby": ariaDescribedBy,
 }: FieldProps) {
   return (
@@ -77,6 +75,7 @@ function Field({
         autoComplete={autoComplete}
         disabled={disabled}
         required={required}
+        aria-invalid={isInvalid ?? false}
         aria-describedby={ariaDescribedBy}
         onChange={(e) => onChange(e.target.value)}
         className="rounded-md border border-neutral-300 bg-white px-3 py-2 text-body text-neutral-900 placeholder-neutral-500
@@ -100,8 +99,6 @@ export function LoginPage() {
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [formState, setFormState] = useState<FormState>("idle");
-  const [formError, setFormError] = useState<string | null>(null);
   const errorRef = useRef<HTMLParagraphElement>(null);
 
   // Query SSO config only when a tenant subdomain is present
@@ -110,35 +107,30 @@ export function LoginPage() {
     queryFn: () => getTenantSsoConfig(tenantSlug!),
     enabled: tenantSlug !== null,
     retry: false,
-    // Don't show error if SSO config check fails — just hide the button
+    // If SSO config check fails, treat as not available (hide button)
   });
 
   const ssoEnabled = ssoQuery.data?.ssoEnabled ?? false;
 
   const loginMutation = useMutation({
     mutationFn: () => login({ email, password }),
-    onMutate: () => {
-      setFormState("loading");
-      setFormError(null);
-    },
     onSuccess: (data) => {
       setAccessToken(data.accessToken);
       navigate("/chat", { replace: true });
     },
-    onError: (err) => {
-      setFormState("error");
-      setFormError(errorMessage(err));
-    },
   });
 
-  // Focus the error message when it appears (WCAG 2.1 §3.3.1)
+  // Derive all form display state directly from mutation — no manual sync needed.
+  const isLoading = loginMutation.isPending;
+  const isError = loginMutation.isError;
+  const formError = isError ? errorMessage(loginMutation.error) : null;
+
+  // Focus error message when it first appears (WCAG 2.1 §3.3.1)
   useEffect(() => {
-    if (formState === "error" && errorRef.current) {
+    if (isError && errorRef.current) {
       errorRef.current.focus();
     }
-  }, [formState, formError]);
-
-  const isLoading = formState === "loading";
+  }, [isError, loginMutation.error]);
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -174,7 +166,7 @@ export function LoginPage() {
         <h1 className="mb-6 text-heading-1 text-neutral-900">Sign In</h1>
 
         {/* Error message */}
-        {formState === "error" && formError && (
+        {isError && formError && (
           <p
             ref={errorRef}
             id="login-error"
@@ -196,10 +188,11 @@ export function LoginPage() {
               type="email"
               value={email}
               onChange={setEmail}
-              autoComplete="username email"
+              autoComplete="email"
               disabled={isLoading}
               required
-              aria-describedby={formState === "error" ? "login-error" : undefined}
+              isInvalid={isError}
+              aria-describedby={isError ? "login-error" : undefined}
             />
             <Field
               id="password"
@@ -210,7 +203,8 @@ export function LoginPage() {
               autoComplete="current-password"
               disabled={isLoading}
               required
-              aria-describedby={formState === "error" ? "login-error" : undefined}
+              isInvalid={isError}
+              aria-describedby={isError ? "login-error" : undefined}
             />
           </div>
 

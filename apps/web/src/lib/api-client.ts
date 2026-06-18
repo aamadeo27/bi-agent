@@ -44,8 +44,11 @@ async function request<T>(
       return request<T>(path, init, { skipRefresh: true });
     } catch {
       clearAccessToken();
-      window.location.href = "/login?reason=session_expired";
-      return undefined as T;
+      // Notify the SPA via event so the router layer decides how to navigate
+      // (avoids making a routing architectural decision inside a utility module).
+      window.dispatchEvent(new CustomEvent("auth:session-expired"));
+      // Throw so callers receive a rejected promise rather than stale undefined data.
+      throw { code: "AUTH" as const, message: "Session expired." };
     }
   }
 

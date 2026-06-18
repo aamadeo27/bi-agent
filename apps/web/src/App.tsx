@@ -1,4 +1,5 @@
-import { Routes, Route, Navigate } from "react-router-dom";
+import { useEffect } from "react";
+import { Routes, Route, Navigate, useNavigate } from "react-router-dom";
 import { LoginPage } from "./screens/login-page";
 
 function PlaceholderPage({
@@ -87,6 +88,17 @@ export function ErrorPage() {
 }
 
 export function App() {
+  const navigate = useNavigate();
+
+  // Redirect to login on session-expired event dispatched by api-client
+  useEffect(() => {
+    function handleSessionExpired() {
+      navigate("/login?reason=session_expired", { replace: true });
+    }
+    window.addEventListener("auth:session-expired", handleSessionExpired);
+    return () => window.removeEventListener("auth:session-expired", handleSessionExpired);
+  }, [navigate]);
+
   return (
     <Routes>
       {/* Default: redirect to login (auth guard will later redirect to /chat when authenticated) */}
