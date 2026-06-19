@@ -11,6 +11,7 @@ export interface AuthContext {
 
 // All Express.Request augmentations live here — single location for the request shape.
 declare global {
+  // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace Express {
     interface Request {
       /** Populated by authMiddleware from the validated JWT. */
