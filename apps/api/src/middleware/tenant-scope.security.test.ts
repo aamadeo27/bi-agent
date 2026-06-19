@@ -1,11 +1,16 @@
 /**
  * Security-adversarial tests for tenantScopeMiddleware.
- * Covers the testing.md security set: tenant-leakage and foreign-id cases.
+ * Covers the testing.md security set: tenant-leakage, foreign-id, and
+ * crafted-payload (extreme depth) cases.
  */
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import express from "express";
 import request from "supertest";
 import { tenantScopeMiddleware } from "./tenant-scope.js";
+
+vi.mock("../db/with-tenant.js", () => ({
+  withTenant: vi.fn(),
+}));
 
 function buildApp(tenantId: string) {
   const app = express();
@@ -22,47 +27,44 @@ function buildApp(tenantId: string) {
 
 describe("tenantScopeMiddleware — tenant leakage / foreign-id (security)", () => {
   it("blocks a foreign tenantId three levels deep", async () => {
-    const res = await request(buildApp("tenantA"))
+    const res = await request(buildApp("tenant01"))
       .post("/data")
-      .send({ l1: { l2: { l3: { tenantId: "tenantB" } } } });
+      .send({ l1: { l2: { l3: { tenantId: "tenant02" } } } });
     expect(res.status).toBe(403);
     expect(res.body.code).toBe("TENANT");
   });
 
   it("blocks a foreign tenantId inside an array element", async () => {
-    const res = await request(buildApp("tenantA"))
+    const res = await request(buildApp("tenant01"))
       .post("/data")
-      .send({ rows: [{ id: 1 }, { id: 2, tenantId: "tenantB" }] });
+      .send({ rows: [{ id: 1 }, { id: 2, tenantId: "tenant02" }] });
     expect(res.status).toBe(403);
     expect(res.body.code).toBe("TENANT");
   });
 
   it("blocks when a matching and a foreign tenantId both appear (defense-in-depth)", async () => {
-    // Even if one tenantId is correct, a second foreign one must be rejected.
-    const res = await request(buildApp("tenantA"))
+    const res = await request(buildApp("tenant01"))
       .post("/data")
-      .send({ tenantId: "tenantA", nested: { tenantId: "tenantB" } });
+      .send({ tenantId: "tenant01", nested: { tenantId: "tenant02" } });
     expect(res.status).toBe(403);
     expect(res.body.code).toBe("TENANT");
   });
 
   it("request scoped to tenant A with tenant B id in body is rejected", async () => {
-    // Core tenant-leakage scenario: caller tries to use their valid token to act
-    // on another tenant's resources by injecting the target tenantId in the body.
-    const res = await request(buildApp("tenantA"))
+    const res = await request(buildApp("tenant01"))
       .post("/data")
-      .send({ query: "SELECT * FROM reports", tenantId: "tenantB" });
+      .send({ query: "SELECT * FROM reports", tenantId: "tenant02" });
     expect(res.status).toBe(403);
     expect(res.body.code).toBe("TENANT");
   });
 
   it("blocks foreign tenantId inside deeply nested array of objects", async () => {
-    const res = await request(buildApp("tenantA"))
+    const res = await request(buildApp("tenant01"))
       .post("/data")
       .send({
         filters: [
           { field: "name", value: "foo" },
-          { field: "owner", value: { tenantId: "tenantB" } },
+          { field: "owner", value: { tenantId: "tenant02" } },
         ],
       });
     expect(res.status).toBe(403);
@@ -70,17 +72,31 @@ describe("tenantScopeMiddleware — tenant leakage / foreign-id (security)", () 
   });
 
   it("passes when all tenantId occurrences match the auth tenant", async () => {
-    const res = await request(buildApp("tenantA"))
+    const res = await request(buildApp("tenant01"))
       .post("/data")
-      .send({ tenantId: "tenantA", meta: { tenantId: "tenantA" } });
+      .send({ tenantId: "tenant01", meta: { tenantId: "tenant01" } });
     expect(res.status).toBe(200);
     expect(res.body.ok).toBe(true);
   });
 
-  it("passes a completely tenant-free body for tenant A", async () => {
-    const res = await request(buildApp("tenantA"))
+  it("passes a completely tenant-free body", async () => {
+    const res = await request(buildApp("tenant01"))
       .post("/data")
       .send({ query: "SELECT 1", limit: 100 });
     expect(res.status).toBe(200);
+  });
+
+  it("does not exhaust the call stack on a 500-levels-deep crafted payload", async () => {
+    // Attacker sends a deeply-nested object hoping to crash via stack overflow.
+    let payload: unknown = { tenantId: "tenant02" };
+    for (let i = 0; i < 500; i++) {
+      payload = { child: payload };
+    }
+    // Must return 200 (tenantId truncated by depth limit — not found) or 403 (if
+    // found within MAX_DEPTH). Either way, the process must NOT crash.
+    const res = await request(buildApp("tenant01"))
+      .post("/data")
+      .send(payload as object);
+    expect([200, 403]).toContain(res.status);
   });
 });

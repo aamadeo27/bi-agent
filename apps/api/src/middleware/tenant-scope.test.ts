@@ -1,8 +1,14 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import express from "express";
 import request from "supertest";
 import { tenantScopeMiddleware, collectTenantIds } from "./tenant-scope.js";
 import type { AuthContext } from "./auth.js";
+
+// Prevent withTenant from touching a real DB — it is only stored in a closure,
+// but the mock ensures no accidental connection attempt if a test calls it.
+vi.mock("../db/with-tenant.js", () => ({
+  withTenant: vi.fn(),
+}));
 
 /** Build a test app with req.auth pre-populated as if authMiddleware ran. */
 function buildApp(tenantId: string) {
@@ -22,7 +28,7 @@ function buildApp(tenantId: string) {
 
 describe("tenantScopeMiddleware", () => {
   it("passes a request with no tenantId in the body", async () => {
-    const res = await request(buildApp("tenantA"))
+    const res = await request(buildApp("tenant01"))
       .post("/data")
       .send({ name: "report" });
     expect(res.status).toBe(200);
@@ -30,16 +36,32 @@ describe("tenantScopeMiddleware", () => {
   });
 
   it("passes when body tenantId matches the auth context", async () => {
-    const res = await request(buildApp("tenantA"))
+    const res = await request(buildApp("tenant01"))
       .post("/data")
-      .send({ tenantId: "tenantA", name: "report" });
+      .send({ tenantId: "tenant01", name: "report" });
     expect(res.status).toBe(200);
   });
 
   it("rejects 403 TENANT when body contains a foreign tenantId", async () => {
-    const res = await request(buildApp("tenantA"))
+    const res = await request(buildApp("tenant01"))
       .post("/data")
-      .send({ tenantId: "tenantB" });
+      .send({ tenantId: "tenant02" });
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe("TENANT");
+  });
+
+  it("rejects 403 TENANT when req.auth.tenantId has invalid format", async () => {
+    // A malformed tenantId in the JWT (e.g. contains hyphens) must be rejected.
+    const app = express();
+    app.use(express.json());
+    app.use((req, _res, next) => {
+      req.auth = { userId: "u1", tenantId: "bad-tenant-id!", roleId: null };
+      next();
+    });
+    app.post("/data", tenantScopeMiddleware, (_req, res) => {
+      res.json({ ok: true });
+    });
+    const res = await request(app).post("/data").send({});
     expect(res.status).toBe(403);
     expect(res.body.code).toBe("TENANT");
   });
@@ -55,19 +77,36 @@ describe("tenantScopeMiddleware", () => {
     expect(res.body.code).toBe("AUTH");
   });
 
+  it("attaches withTenantTx as a function to the request", async () => {
+    const captured: unknown[] = [];
+    const app = express();
+    app.use(express.json());
+    app.use((req, _res, next) => {
+      req.auth = { userId: "u1", tenantId: "tenant01", roleId: null };
+      next();
+    });
+    app.post("/data", tenantScopeMiddleware, (req, res) => {
+      captured.push(typeof req.withTenantTx);
+      res.json({ ok: true });
+    });
+
+    await request(app).post("/data").send({});
+    expect(captured[0]).toBe("function");
+  });
+
   it("does not call next() when a foreign tenantId is present", async () => {
     const captured: unknown[] = [];
     const app = express();
     app.use(express.json());
     app.use((req, _res, next) => {
-      req.auth = { userId: "u1", tenantId: "tenantA", roleId: null };
+      req.auth = { userId: "u1", tenantId: "tenant01", roleId: null };
       next();
     });
     app.post("/data", tenantScopeMiddleware, (_req, res) => {
       captured.push(true);
       res.json(null);
     });
-    await request(app).post("/data").send({ tenantId: "tenantB" });
+    await request(app).post("/data").send({ tenantId: "tenant02" });
     expect(captured).toHaveLength(0);
   });
 });
@@ -115,5 +154,23 @@ describe("collectTenantIds", () => {
       sub: { tenantId: "t2" },
     });
     expect(ids).toEqual(["t1", "t2"]);
+  });
+
+  it("returns [] when nesting exceeds MAX_DEPTH (20 levels)", () => {
+    // Build a chain deeper than MAX_DEPTH; the tenantId at the bottom must be ignored.
+    let nested: unknown = { tenantId: "hidden" };
+    for (let i = 0; i < 22; i++) {
+      nested = { child: nested };
+    }
+    expect(collectTenantIds(nested)).toEqual([]);
+  });
+
+  it("still extracts tenantId just within MAX_DEPTH", () => {
+    // At depth 19 (0-indexed), the value should still be collected.
+    let nested: unknown = { tenantId: "visible" };
+    for (let i = 0; i < 18; i++) {
+      nested = { child: nested };
+    }
+    expect(collectTenantIds(nested)).toEqual(["visible"]);
   });
 });

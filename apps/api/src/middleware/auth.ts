@@ -1,5 +1,6 @@
 import { jwtVerify, type JWTVerifyOptions } from "jose";
 import type { RequestHandler } from "express";
+import type { Prisma } from "@prisma/client";
 import { JwtClaimsSchema, type ApiErrorResponse } from "@bi/contracts";
 
 export interface AuthContext {
@@ -8,20 +9,42 @@ export interface AuthContext {
   roleId: string | null;
 }
 
-// Augment Express Request to carry auth context for the duration of a request.
+// All Express.Request augmentations live here — single location for the request shape.
 declare global {
   namespace Express {
     interface Request {
+      /** Populated by authMiddleware from the validated JWT. */
       auth?: AuthContext;
+      /**
+       * Runs fn inside a Prisma $transaction with SET LOCAL search_path scoped to
+       * this request's tenant. Attached by tenantScopeMiddleware.
+       * All control-plane DB access within the request MUST go through this wrapper.
+       */
+      withTenantTx?: <T>(fn: (tx: Prisma.TransactionClient) => Promise<T>) => Promise<T>;
     }
   }
 }
 
-/** Encode JWT_SECRET env var as a byte key for jose's symmetric verify. */
+// Memoised once on first use — avoids re-encoding on every request.
+// Call initAuth() at process startup to validate JWT_SECRET eagerly.
+let _secretKey: Uint8Array | undefined;
+
 function getSecretKey(): Uint8Array {
-  const s = process.env["JWT_SECRET"];
-  if (!s) throw new Error("JWT_SECRET env var is not set");
-  return new TextEncoder().encode(s);
+  _secretKey ??= (() => {
+    const s = process.env["JWT_SECRET"];
+    if (!s) throw new Error("JWT_SECRET env var is required — set it before starting the server");
+    return new TextEncoder().encode(s);
+  })();
+  return _secretKey;
+}
+
+/**
+ * Validate JWT_SECRET at process startup.
+ * Throws immediately if the env var is absent so the process fails fast
+ * rather than returning 401 on every request silently.
+ */
+export function initAuth(): void {
+  getSecretKey();
 }
 
 // Restrict to HS256 only — prevents alg-confusion / "none" attacks.

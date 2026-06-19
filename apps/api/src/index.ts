@@ -3,7 +3,7 @@ import { logger } from "./observability/logger.js";
 import { httpLogger } from "./observability/http-logger.js";
 import { errorHandler } from "./observability/error-middleware.js";
 import { initErrorSink } from "./observability/error-sink.js";
-import { authMiddleware } from "./middleware/auth.js";
+import { authMiddleware, initAuth } from "./middleware/auth.js";
 import { tenantScopeMiddleware } from "./middleware/tenant-scope.js";
 
 // Initialize the dev-only error-tracking sink. No-ops gracefully when
@@ -41,6 +41,8 @@ app.use(errorHandler);
 const port = Number(process.env["PORT"] ?? 3000);
 
 if (process.env["NODE_ENV"] !== "test") {
+  // Validate JWT_SECRET at startup — fail fast instead of 401-ing every request.
+  initAuth();
   app.listen(port, () => {
     logger.info({ port }, "API listening");
   });
