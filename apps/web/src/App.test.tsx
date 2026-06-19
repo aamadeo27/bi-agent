@@ -1,9 +1,24 @@
 import React from "react";
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import axe from "axe-core";
+// Mock api-client to prevent real network calls in App-level tests
+vi.mock("./lib/api-client", async (importOriginal) => {
+  const mod = await importOriginal<typeof import("./lib/api-client")>();
+  return {
+    ...mod,
+    getTenantSsoConfig: vi.fn().mockResolvedValue({ ssoEnabled: false }),
+  };
+});
+
+// Mock tenant resolution so no subdomain SSO query fires in unit tests
+vi.mock("./lib/tenant", async (importOriginal) => {
+  const mod = await importOriginal<typeof import("./lib/tenant")>();
+  return { ...mod, getTenantSlug: vi.fn().mockReturnValue(null) };
+});
+
 import {
   App,
   LoginPage,
@@ -36,7 +51,9 @@ function renderPage(element: React.ReactElement) {
   });
   return render(
     <QueryClientProvider client={queryClient}>
-      {element}
+      <MemoryRouter initialEntries={["/login"]}>
+        {element}
+      </MemoryRouter>
     </QueryClientProvider>
   );
 }
