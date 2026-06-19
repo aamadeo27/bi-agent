@@ -1,4 +1,6 @@
-import { Routes, Route, Navigate } from "react-router-dom";
+import { useEffect } from "react";
+import { Routes, Route, Navigate, useNavigate } from "react-router-dom";
+import { LoginPage } from "./screens/login-page";
 
 function PlaceholderPage({
   screenId,
@@ -20,16 +22,8 @@ function PlaceholderPage({
   );
 }
 
-// S1 — Login / Auth
-export function LoginPage() {
-  return (
-    <PlaceholderPage
-      screenId="S1"
-      title="Sign In"
-      note="Login / Auth — placeholder for T2.x auth implementation"
-    />
-  );
-}
+// S1 is now the real LoginPage (imported from screens/login-page)
+export { LoginPage };
 
 // S2 — Chat Workspace
 // S3 (Query Inspect Drawer) and S9 (Permission Block) are overlay components
@@ -94,6 +88,17 @@ export function ErrorPage() {
 }
 
 export function App() {
+  const navigate = useNavigate();
+
+  // Redirect to login on session-expired event dispatched by api-client
+  useEffect(() => {
+    function handleSessionExpired() {
+      navigate("/login?reason=session_expired", { replace: true });
+    }
+    window.addEventListener("auth:session-expired", handleSessionExpired);
+    return () => window.removeEventListener("auth:session-expired", handleSessionExpired);
+  }, [navigate]);
+
   return (
     <Routes>
       {/* Default: redirect to login (auth guard will later redirect to /chat when authenticated) */}
