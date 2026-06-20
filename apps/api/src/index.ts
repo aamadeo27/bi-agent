@@ -1,10 +1,12 @@
 import express, { type Express, Router } from "express";
+import cookieParser from "cookie-parser";
 import { logger } from "./observability/logger.js";
 import { httpLogger } from "./observability/http-logger.js";
 import { errorHandler } from "./observability/error-middleware.js";
 import { initErrorSink } from "./observability/error-sink.js";
 import { authMiddleware, initAuth } from "./middleware/auth.js";
 import { tenantScopeMiddleware } from "./middleware/tenant-scope.js";
+import { authRouter } from "./auth/router.js";
 
 // Initialize the dev-only error-tracking sink. No-ops gracefully when
 // SENTRY_DSN is unset (the default in dev/bootstrap) — see error-sink.ts.
@@ -16,11 +18,15 @@ const app: Express = express();
 app.use(httpLogger);
 
 app.use(express.json());
+app.use(cookieParser());
 
 app.get("/health", (_req, res) => {
   // TODO: add control-plane DB ping (Prisma) before v1 launch
   res.json({ status: "ok" });
 });
+
+// Public auth routes (no JWT required — login, refresh, logout).
+app.use("/api/auth", authRouter);
 
 // Protected API router — all routes mounted here require a valid JWT and
 // a tenant-clean request body. Handlers obtain a scoped DB client via
