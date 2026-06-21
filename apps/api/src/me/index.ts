@@ -212,6 +212,11 @@ meRouter.post("/logout-all", async (req, res) => {
 
   try {
     await req.withTenantTx!(async (tx) => {
+      // Idempotent column guard — ensures the column exists for tenants provisioned
+      // before the token_invalidated_at migration was introduced.
+      await tx.$executeRawUnsafe(
+        `ALTER TABLE users ADD COLUMN IF NOT EXISTS "token_invalidated_at" TIMESTAMPTZ`,
+      );
       await tx.$executeRawUnsafe(
         `UPDATE users SET token_invalidated_at = NOW(), updated_at = NOW() WHERE id = $1`,
         userId,

@@ -13,7 +13,12 @@ import { getAccessToken, setAccessToken, clearAccessToken } from "./auth-store";
 const BASE = "/api";
 
 /** Paths that must NOT trigger the auto-refresh loop on 401. */
-const NO_REFRESH_PATHS = new Set(["/auth/login", "/auth/refresh", "/auth/logout"]);
+const NO_REFRESH_PATHS = new Set([
+  "/auth/login",
+  "/auth/refresh",
+  "/auth/logout",
+  "/me/logout-all", // signing out — never auto-refresh mid-flight
+]);
 
 /**
  * Generic fetch wrapper. Injects Bearer token when available.

@@ -325,13 +325,13 @@ describe("POST /me/password", () => {
 // ─── POST /me/logout-all ──────────────────────────────────────────────────────
 
 describe("POST /me/logout-all", () => {
-  it("returns 204 and executes token_invalidated_at update", async () => {
-    let executedSql = "";
+  it("returns 204 and sets token_invalidated_at = NOW()", async () => {
+    const executedSqls: string[] = [];
     const withTenantTx = async (fn: (tx: unknown) => Promise<unknown>) => {
       const tx = {
         $queryRawUnsafe: vi.fn().mockResolvedValue([]),
         $executeRawUnsafe: vi.fn(async (sql: string) => {
-          executedSql = sql;
+          executedSqls.push(sql);
           return 1;
         }),
       };
@@ -341,6 +341,25 @@ describe("POST /me/logout-all", () => {
 
     const res = await request(app).post("/me/logout-all");
     expect(res.status).toBe(204);
-    expect(executedSql).toContain("token_invalidated_at");
+
+    // ALTER TABLE guard must run first (inline migration for existing tenants)
+    expect(executedSqls[0]).toMatch(/ALTER TABLE.*ADD COLUMN IF NOT EXISTS.*token_invalidated_at/i);
+    // UPDATE must set token_invalidated_at to NOW()
+    expect(executedSqls[1]).toMatch(/UPDATE users SET token_invalidated_at = NOW\(\)/i);
+  });
+
+  it("returns 500 INTERNAL when the DB update fails", async () => {
+    const withTenantTx = async (fn: (tx: unknown) => Promise<unknown>) => {
+      const tx = {
+        $queryRawUnsafe: vi.fn().mockResolvedValue([]),
+        $executeRawUnsafe: vi.fn().mockRejectedValue(new Error("Simulated DB error")),
+      };
+      return fn(tx);
+    };
+    const app = buildApp(defaultAuth, withTenantTx);
+
+    const res = await request(app).post("/me/logout-all");
+    expect(res.status).toBe(500);
+    expect(res.body.code).toBe("INTERNAL");
   });
 });

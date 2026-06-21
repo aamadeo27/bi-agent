@@ -79,9 +79,10 @@ export async function provisionTenant(
           "status"        TEXT        NOT NULL DEFAULT 'invited',
           "role_id"       TEXT,
           "auth_methods"  JSONB       NOT NULL DEFAULT '[]',
-          "password_hash" TEXT,
-          "created_at"    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-          "updated_at"    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          "password_hash"          TEXT,
+          "token_invalidated_at"   TIMESTAMPTZ,
+          "created_at"             TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          "updated_at"             TIMESTAMPTZ NOT NULL DEFAULT NOW(),
           CONSTRAINT "users_pkey" PRIMARY KEY ("id"),
           CONSTRAINT "users_role_fk"
             FOREIGN KEY ("role_id") REFERENCES "${s}"."roles"("id") ON DELETE SET NULL
