@@ -7,7 +7,7 @@ import axe from "axe-core";
 import type { MeResponse } from "@bi/contracts";
 // Vitest hoists vi.mock() calls before module resolution, so even though these
 // imports appear before the vi.mock() calls below, the mocks are applied first.
-import { getMe, updateMe, changePassword, logout } from "../lib/api-client";
+import { getMe, updateMe, changePassword, logoutAll } from "../lib/api-client";
 import { AccountPage } from "./account-page";
 
 // ─── Mocks ────────────────────────────────────────────────────────────────────
@@ -16,7 +16,7 @@ vi.mock("../lib/api-client", () => ({
   getMe: vi.fn(),
   updateMe: vi.fn(),
   changePassword: vi.fn(),
-  logout: vi.fn(),
+  logoutAll: vi.fn(),
 }));
 
 vi.mock("../lib/auth-store", () => ({
@@ -197,6 +197,22 @@ describe("AccountPage password section", () => {
     expect(changePassword).not.toHaveBeenCalled();
   });
 
+  it("clears mismatch error when user edits new password field", async () => {
+    vi.mocked(getMe).mockResolvedValue(meWithPassword);
+    renderAccountPage();
+    await waitFor(() => screen.getByRole("heading", { name: /change password/i }));
+
+    await userEvent.type(screen.getByLabelText(/current password/i), "OldPass1!");
+    await userEvent.type(screen.getByLabelText(/^new password/i), "NewPass1!");
+    await userEvent.type(screen.getByLabelText(/confirm new password/i), "Different1!");
+    await userEvent.click(screen.getByRole("button", { name: /update password/i }));
+    expect(screen.getByText(/passwords do not match/i)).toBeInTheDocument();
+
+    // Editing either new-password field should clear the mismatch error
+    await userEvent.type(screen.getByLabelText(/^new password/i), "X");
+    expect(screen.queryByText(/passwords do not match/i)).not.toBeInTheDocument();
+  });
+
   it("calls changePassword and shows success on matching passwords", async () => {
     vi.mocked(getMe).mockResolvedValue(meWithPassword);
     vi.mocked(changePassword).mockResolvedValue(undefined);
@@ -232,19 +248,13 @@ describe("AccountPage danger zone", () => {
     expect(screen.getByRole("button", { name: /sign out of all sessions/i })).toBeInTheDocument();
   });
 
-  it("requires double-click confirmation before signing out", async () => {
-    vi.mocked(logout).mockResolvedValue(undefined);
+  it("calls logoutAll on single click and clears token", async () => {
+    vi.mocked(logoutAll).mockResolvedValue(undefined);
     renderAccountPage();
     await waitFor(() => screen.getByRole("button", { name: /sign out of all sessions/i }));
 
-    // First click: shows confirmation text
     await userEvent.click(screen.getByRole("button", { name: /sign out of all sessions/i }));
-    expect(screen.getByText(/click again to confirm/i)).toBeInTheDocument();
-    expect(logout).not.toHaveBeenCalled();
-
-    // Second click: confirm — actually signs out
-    await userEvent.click(screen.getByRole("button", { name: /confirm sign out/i }));
-    await waitFor(() => expect(logout).toHaveBeenCalledOnce());
+    await waitFor(() => expect(logoutAll).toHaveBeenCalledOnce());
   });
 });
 

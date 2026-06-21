@@ -90,6 +90,10 @@ export async function provisionTenant(
       await tx.$executeRawUnsafe(
         `CREATE UNIQUE INDEX IF NOT EXISTS "users_email_key" ON "${s}"."users"("email")`
       );
+      // Idempotent backfill — safe to run on existing tenants
+      await tx.$executeRawUnsafe(
+        `ALTER TABLE "${s}"."users" ADD COLUMN IF NOT EXISTS "token_invalidated_at" TIMESTAMPTZ`
+      );
 
       // Cred vault refs — encrypted per-(role,data_source) credentials
       await tx.$executeRawUnsafe(`

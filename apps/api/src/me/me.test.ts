@@ -225,26 +225,31 @@ describe("PATCH /me", () => {
 // ─── POST /me/password ────────────────────────────────────────────────────────
 
 describe("POST /me/password", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.resetAllMocks();
-    vi.mock("argon2", () => ({
-      hash: vi.fn().mockResolvedValue("$argon2id$newhash"),
-      verify: vi.fn().mockResolvedValue(true),
-    }));
-    vi.mock("../db/client.js", () => ({
-      getPrisma: vi.fn(() => ({
-        tenant: {
-          findUnique: vi.fn().mockResolvedValue({
-            id: "tenant1",
-            displayName: "Acme Corp",
-            slug: "acme",
-            status: "active",
-            createdAt: new Date(),
-            updatedAt: new Date(),
-          }),
-        },
-      })),
-    }));
+    // vi.mock() is only hoisted when called at the top level of the module.
+    // Inside beforeEach it has no effect. Reconfigure the already-hoisted mocks
+    // using vi.mocked() instead.
+    const { getPrisma } = await import("../db/client.js");
+    vi.mocked(getPrisma).mockImplementation(
+      () =>
+        ({
+          tenant: {
+            findUnique: vi.fn().mockResolvedValue({
+              id: "tenant1",
+              displayName: "Acme Corp",
+              slug: "acme",
+              status: "active",
+              createdAt: new Date(),
+              updatedAt: new Date(),
+            }),
+          },
+        }) as unknown as ReturnType<typeof getPrisma>,
+    );
+
+    const { hash, verify } = await import("argon2");
+    vi.mocked(hash).mockResolvedValue("$argon2id$newhash" as never);
+    vi.mocked(verify).mockResolvedValue(true as never);
   });
 
   it("returns 204 on valid password change", async () => {
@@ -314,5 +319,28 @@ describe("POST /me/password", () => {
       .send({ currentPassword: "OldPass1!", newPassword: "NewPass1!" });
     expect(res.status).toBe(404);
     expect(res.body.code).toBe("NOT_FOUND");
+  });
+});
+
+// ─── POST /me/logout-all ──────────────────────────────────────────────────────
+
+describe("POST /me/logout-all", () => {
+  it("returns 204 and executes token_invalidated_at update", async () => {
+    let executedSql = "";
+    const withTenantTx = async (fn: (tx: unknown) => Promise<unknown>) => {
+      const tx = {
+        $queryRawUnsafe: vi.fn().mockResolvedValue([]),
+        $executeRawUnsafe: vi.fn(async (sql: string) => {
+          executedSql = sql;
+          return 1;
+        }),
+      };
+      return fn(tx);
+    };
+    const app = buildApp(defaultAuth, withTenantTx);
+
+    const res = await request(app).post("/me/logout-all");
+    expect(res.status).toBe(204);
+    expect(executedSql).toContain("token_invalidated_at");
   });
 });

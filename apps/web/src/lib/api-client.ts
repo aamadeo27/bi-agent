@@ -128,6 +128,15 @@ export async function changePassword(data: ChangePasswordRequest): Promise<void>
   return request<void>("/me/password", { method: "POST", body: JSON.stringify(data) });
 }
 
+/**
+ * POST /api/me/logout-all → invalidates all sessions for the current user.
+ * Sets token_invalidated_at in the tenant DB so future token refreshes are
+ * rejected. The in-memory access token must be cleared client-side after calling.
+ */
+export async function logoutAll(): Promise<void> {
+  return request<void>("/me/logout-all", { method: "POST" }, { skipRefresh: true });
+}
+
 // ─── Conversations ────────────────────────────────────────────────────────────
 
 /** GET /api/conversations → tenant+user scoped list. */

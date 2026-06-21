@@ -1,4 +1,5 @@
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { clearAccessToken } from "../lib/auth-store";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -30,13 +31,13 @@ const VARIANTS: Record<ErrorVariant, VariantConfig> = {
     heading: "Workspace Access Denied",
     body: "You are not authorized to access this workspace.",
     ctaLabel: "Sign out",
-    onCta: (nav) => nav("/login", { replace: true }),
+    onCta: (nav) => { clearAccessToken(); nav("/login", { replace: true }); },
   },
   "session-expired": {
     heading: "Session Expired",
     body: "Your session has expired. Please sign in again.",
     ctaLabel: "Sign in",
-    onCta: (nav) => nav("/login", { replace: true }),
+    onCta: (nav) => { clearAccessToken(); nav("/login", { replace: true }); },
   },
 };
 

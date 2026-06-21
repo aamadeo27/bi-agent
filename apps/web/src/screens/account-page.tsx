@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { getMe, updateMe, changePassword, logout } from "../lib/api-client";
+import { getMe, updateMe, changePassword, logoutAll } from "../lib/api-client";
 import { clearAccessToken } from "../lib/auth-store";
 import type { MeResponse } from "@bi/contracts";
 
@@ -12,6 +12,15 @@ function apiErrorMessage(err: unknown): string {
     return String((err as { message: string }).message);
   }
   return "An unexpected error occurred. Please try again.";
+}
+
+function isApiAuthError(err: unknown): boolean {
+  return (
+    !!err &&
+    typeof err === "object" &&
+    "code" in err &&
+    (err as { code: string }).code === "AUTH"
+  );
 }
 
 // ─── Field component ─────────────────────────────────────────────────────────
@@ -78,6 +87,11 @@ function ProfileSection({ me }: { me: MeResponse }) {
   const qc = useQueryClient();
   const [displayName, setDisplayName] = useState(me.user.displayName);
   const errorRef = useRef<HTMLParagraphElement>(null);
+
+  // Sync local state when the server value changes (e.g. after query invalidation)
+  useEffect(() => {
+    setDisplayName(me.user.displayName);
+  }, [me.user.displayName]);
 
   const updateMutation = useMutation({
     mutationFn: () => updateMe({ displayName }),
@@ -249,7 +263,7 @@ function PasswordSection() {
           onChange={setCurrentPassword}
           disabled={isLoading}
           required
-          isInvalid={isError}
+          isInvalid={isError && isApiAuthError(changeMutation.error)}
           aria-describedby={isError ? "password-error" : undefined}
         />
         <Field
@@ -257,7 +271,7 @@ function PasswordSection() {
           label="New password"
           type="password"
           value={newPassword}
-          onChange={setNewPassword}
+          onChange={(v) => { setNewPassword(v); setMismatch(false); }}
           disabled={isLoading}
           required
           isInvalid={mismatch}
@@ -268,7 +282,7 @@ function PasswordSection() {
           label="Confirm new password"
           type="password"
           value={confirmPassword}
-          onChange={setConfirmPassword}
+          onChange={(v) => { setConfirmPassword(v); setMismatch(false); }}
           disabled={isLoading}
           required
           isInvalid={mismatch}
@@ -297,10 +311,9 @@ function PasswordSection() {
 
 function DangerZone() {
   const navigate = useNavigate();
-  const [confirming, setConfirming] = useState(false);
 
-  const logoutMutation = useMutation({
-    mutationFn: () => logout(),
+  const logoutAllMutation = useMutation({
+    mutationFn: () => logoutAll(),
     onSuccess: () => {
       clearAccessToken();
       navigate("/login", { replace: true });
@@ -311,14 +324,6 @@ function DangerZone() {
       navigate("/login", { replace: true });
     },
   });
-
-  function handleSignOutAll() {
-    if (!confirming) {
-      setConfirming(true);
-      return;
-    }
-    logoutMutation.mutate();
-  }
 
   return (
     <section
@@ -332,22 +337,16 @@ function DangerZone() {
         Sign out of all active sessions. You will need to sign in again.
       </p>
 
-      {confirming && (
-        <p role="alert" className="mb-3 text-body text-semantic-error">
-          This will end all your sessions. Click again to confirm.
-        </p>
-      )}
-
       <button
         type="button"
-        onClick={handleSignOutAll}
-        disabled={logoutMutation.isPending}
+        onClick={() => logoutAllMutation.mutate()}
+        disabled={logoutAllMutation.isPending}
         className="rounded-md border border-semantic-error px-4 py-2 text-body font-semibold text-semantic-error
           transition-colors hover:bg-semantic-error hover:text-white
           focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-semantic-error focus-visible:ring-offset-2
           disabled:cursor-not-allowed disabled:opacity-50"
       >
-        {logoutMutation.isPending ? "Signing out…" : confirming ? "Confirm sign out" : "Sign out of all sessions"}
+        {logoutAllMutation.isPending ? "Signing out…" : "Sign out of all sessions"}
       </button>
     </section>
   );
