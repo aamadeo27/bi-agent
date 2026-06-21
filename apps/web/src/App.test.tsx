@@ -10,6 +10,13 @@ vi.mock("./lib/api-client", async (importOriginal) => {
   return {
     ...mod,
     getTenantSsoConfig: vi.fn().mockResolvedValue({ ssoEnabled: false }),
+    // AccountPage (S10) calls getMe — stub to keep tests deterministic
+    getMe: vi.fn().mockResolvedValue({
+      user: { id: "u1", email: "alice@example.com", displayName: "Alice", status: "active", authMethods: ["password"] },
+      role: { id: "role1", name: "Analyst" },
+      capabilities: { canInspectQuery: false },
+      tenant: { id: "t1", displayName: "Acme Corp" },
+    }),
   };
 });
 

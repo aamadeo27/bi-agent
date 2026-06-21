@@ -24,6 +24,7 @@
     "@bi/contracts": "workspace:*",
     "@prisma/client": "^5.22.0",
     "@sentry/node": "^10.58.0",
+    "argon2": "^0.31.2",
     "express": "^4.21.1",
     "jose": "^6.0.0",
     "pino": "^9.5.0",

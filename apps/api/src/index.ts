@@ -5,6 +5,7 @@ import { errorHandler } from "./observability/error-middleware.js";
 import { initErrorSink } from "./observability/error-sink.js";
 import { authMiddleware, initAuth } from "./middleware/auth.js";
 import { tenantScopeMiddleware } from "./middleware/tenant-scope.js";
+import { meRouter } from "./me/index.js";
 
 // Initialize the dev-only error-tracking sink. No-ops gracefully when
 // SENTRY_DSN is unset (the default in dev/bootstrap) — see error-sink.ts.
@@ -29,9 +30,7 @@ const protectedRouter = Router();
 protectedRouter.use(authMiddleware);
 protectedRouter.use(tenantScopeMiddleware);
 
-// TODO: mount route modules here as they are implemented, e.g.:
-//   protectedRouter.use("/me", meRouter);
-//   protectedRouter.use("/conversations", conversationsRouter);
+protectedRouter.use("/me", meRouter);
 
 app.use("/api", protectedRouter);
 

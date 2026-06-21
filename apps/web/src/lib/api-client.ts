@@ -2,6 +2,8 @@ import type {
   LoginRequest,
   LoginResponse,
   MeResponse,
+  UpdateMeRequest,
+  ChangePasswordRequest,
   ConversationSummary,
   GeneratedQueryView,
 } from "@bi/contracts";
@@ -114,6 +116,16 @@ export function getSsoStartUrl(tenantSlug: string): string {
 /** GET /api/me → current user + capabilities. */
 export async function getMe(): Promise<MeResponse> {
   return request<MeResponse>("/me");
+}
+
+/** PATCH /api/me → update display name. */
+export async function updateMe(data: UpdateMeRequest): Promise<void> {
+  return request<void>("/me", { method: "PATCH", body: JSON.stringify(data) });
+}
+
+/** POST /api/me/password → change password (password-auth users only). */
+export async function changePassword(data: ChangePasswordRequest): Promise<void> {
+  return request<void>("/me/password", { method: "POST", body: JSON.stringify(data) });
 }
 
 // ─── Conversations ────────────────────────────────────────────────────────────

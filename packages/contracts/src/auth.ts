@@ -28,18 +28,32 @@ export const InviteAcceptRequestSchema = z.object({
 });
 export type InviteAcceptRequest = z.infer<typeof InviteAcceptRequestSchema>;
 
-/** GET /api/me */
+/** GET /api/me — full profile needed by the SPA shell (S10). */
 export const MeResponseSchema = z.object({
   user: z.object({
     id: z.string(),
     email: z.string().email(),
     displayName: z.string(),
     status: z.enum(["invited", "active", "suspended"]),
+    authMethods: z.array(z.enum(["password", "sso"])),
   }),
-  roleId: z.string().nullable(),
+  role: z.object({ id: z.string(), name: z.string() }).nullable(),
   capabilities: z.object({
     canInspectQuery: z.boolean(),
   }),
-  tenantId: z.string(),
+  tenant: z.object({ id: z.string(), displayName: z.string() }),
 });
 export type MeResponse = z.infer<typeof MeResponseSchema>;
+
+/** PATCH /api/me — update editable profile fields. */
+export const UpdateMeRequestSchema = z.object({
+  displayName: z.string().min(1).max(256),
+});
+export type UpdateMeRequest = z.infer<typeof UpdateMeRequestSchema>;
+
+/** POST /api/me/password — change password (password-auth users only). */
+export const ChangePasswordRequestSchema = z.object({
+  currentPassword: z.string().min(1),
+  newPassword: z.string().min(8),
+});
+export type ChangePasswordRequest = z.infer<typeof ChangePasswordRequestSchema>;

@@ -1,6 +1,8 @@
 import { useEffect } from "react";
 import { Routes, Route, Navigate, useNavigate } from "react-router-dom";
 import { LoginPage } from "./screens/login-page";
+import { AccountPage as AccountPageScreen } from "./screens/account-page";
+import { ErrorPage as ErrorPageScreen } from "./screens/error-page";
 
 function PlaceholderPage({
   screenId,
@@ -71,21 +73,11 @@ export function AdminAuditLogPage() {
   );
 }
 
-// S10 — Account / Profile
-export function AccountPage() {
-  return <PlaceholderPage screenId="S10" title="Account & Profile" />;
-}
+// S10 — Account / Profile (real implementation in screens/account-page.tsx)
+export { AccountPageScreen as AccountPage };
 
-// S11 — Error / 404 / Tenant Boundary
-export function ErrorPage() {
-  return (
-    <PlaceholderPage
-      screenId="S11"
-      title="Page Not Found"
-      note="Error / 404 / Tenant Boundary — use navigation to return to the app"
-    />
-  );
-}
+// S11 — Error / 404 / Tenant Boundary (real implementation in screens/error-page.tsx)
+export { ErrorPageScreen as ErrorPage };
 
 export function App() {
   const navigate = useNavigate();
@@ -130,10 +122,10 @@ export function App() {
       <Route path="/admin/audit" element={<AdminAuditLogPage />} />
 
       {/* S10 — Account / Profile */}
-      <Route path="/account" element={<AccountPage />} />
+      <Route path="/account" element={<AccountPageScreen />} />
 
       {/* S11 — Catch-all: 404 / forbidden / tenant boundary */}
-      <Route path="*" element={<ErrorPage />} />
+      <Route path="*" element={<ErrorPageScreen />} />
     </Routes>
   );
 }
