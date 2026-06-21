@@ -630,30 +630,69 @@ describe("InviteAcceptRequestSchema", () => {
 });
 
 describe("MeResponseSchema", () => {
-  it("parses valid me response", () => {
+  const baseTenant = { id: "t1", displayName: "Acme Corp" };
+  const baseRole = { id: "role-1", name: "Analyst" };
+  const baseUser = {
+    id: "u1",
+    email: "alice@example.com",
+    displayName: "Alice",
+    status: "active" as const,
+    authMethods: ["password"] as const,
+  };
+
+  it("parses valid me response with role and tenant objects", () => {
     expect(() =>
       MeResponseSchema.parse({
-        user: {
-          id: "u1",
-          email: "alice@example.com",
-          displayName: "Alice",
-          status: "active",
-        },
-        roleId: "role-1",
+        user: baseUser,
+        role: baseRole,
         capabilities: { canInspectQuery: true },
-        tenantId: "t1",
+        tenant: baseTenant,
       })
     ).not.toThrow();
   });
 
-  it("parses with null roleId", () => {
+  it("parses with null role (no role assigned)", () => {
     expect(() =>
       MeResponseSchema.parse({
-        user: { id: "u1", email: "a@b.com", displayName: "A", status: "invited" },
-        roleId: null,
+        user: { ...baseUser, authMethods: ["sso"] },
+        role: null,
         capabilities: { canInspectQuery: false },
-        tenantId: "t1",
+        tenant: baseTenant,
       })
     ).not.toThrow();
+  });
+
+  it("parses with both password and sso authMethods", () => {
+    expect(() =>
+      MeResponseSchema.parse({
+        user: { ...baseUser, authMethods: ["password", "sso"] },
+        role: baseRole,
+        capabilities: { canInspectQuery: false },
+        tenant: baseTenant,
+      })
+    ).not.toThrow();
+  });
+
+  it("rejects missing authMethods", () => {
+    const { authMethods: _, ...userWithoutMethods } = baseUser;
+    expect(() =>
+      MeResponseSchema.parse({
+        user: userWithoutMethods,
+        role: baseRole,
+        capabilities: { canInspectQuery: false },
+        tenant: baseTenant,
+      })
+    ).toThrow();
+  });
+
+  it("rejects tenant without displayName", () => {
+    expect(() =>
+      MeResponseSchema.parse({
+        user: baseUser,
+        role: baseRole,
+        capabilities: { canInspectQuery: false },
+        tenant: { id: "t1" },
+      })
+    ).toThrow();
   });
 });

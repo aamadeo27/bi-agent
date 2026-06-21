@@ -79,9 +79,10 @@ export async function provisionTenant(
           "status"        TEXT        NOT NULL DEFAULT 'invited',
           "role_id"       TEXT,
           "auth_methods"  JSONB       NOT NULL DEFAULT '[]',
-          "password_hash" TEXT,
-          "created_at"    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-          "updated_at"    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          "password_hash"          TEXT,
+          "token_invalidated_at"   TIMESTAMPTZ,
+          "created_at"             TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          "updated_at"             TIMESTAMPTZ NOT NULL DEFAULT NOW(),
           CONSTRAINT "users_pkey" PRIMARY KEY ("id"),
           CONSTRAINT "users_role_fk"
             FOREIGN KEY ("role_id") REFERENCES "${s}"."roles"("id") ON DELETE SET NULL
@@ -89,6 +90,10 @@ export async function provisionTenant(
       `);
       await tx.$executeRawUnsafe(
         `CREATE UNIQUE INDEX IF NOT EXISTS "users_email_key" ON "${s}"."users"("email")`
+      );
+      // Idempotent backfill — safe to run on existing tenants
+      await tx.$executeRawUnsafe(
+        `ALTER TABLE "${s}"."users" ADD COLUMN IF NOT EXISTS "token_invalidated_at" TIMESTAMPTZ`
       );
 
       // Cred vault refs — encrypted per-(role,data_source) credentials

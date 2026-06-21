@@ -1,11 +1,15 @@
 /**
  * Security-adversarial tests for authMiddleware.
  * Covers expired tokens, tampered payloads, wrong secrets, and alg-confusion.
+ * All tokens in this suite are intentionally invalid — they fail before the
+ * session-invalidation DB check, so withTenant is mocked to return null.
  */
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import request from "supertest";
 import { SignJWT } from "jose";
 import { TEST_SECRET, SECRET_KEY, signToken, buildAuthApp } from "./test-helpers.js";
+
+vi.mock("../db/with-tenant.js", () => ({ withTenant: vi.fn() }));
 
 const OTHER_SECRET = new TextEncoder().encode("a-completely-different-secret!!!");
 

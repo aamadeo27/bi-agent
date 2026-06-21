@@ -6,6 +6,7 @@ import { errorHandler } from "./observability/error-middleware.js";
 import { initErrorSink } from "./observability/error-sink.js";
 import { authMiddleware, initAuth } from "./middleware/auth.js";
 import { tenantScopeMiddleware } from "./middleware/tenant-scope.js";
+import { meRouter } from "./me/index.js";
 import { authRouter } from "./auth/router.js";
 
 // Initialize the dev-only error-tracking sink. No-ops gracefully when
@@ -35,9 +36,7 @@ const protectedRouter = Router();
 protectedRouter.use(authMiddleware);
 protectedRouter.use(tenantScopeMiddleware);
 
-// TODO: mount route modules here as they are implemented, e.g.:
-//   protectedRouter.use("/me", meRouter);
-//   protectedRouter.use("/conversations", conversationsRouter);
+protectedRouter.use("/me", meRouter);
 
 app.use("/api", protectedRouter);
 

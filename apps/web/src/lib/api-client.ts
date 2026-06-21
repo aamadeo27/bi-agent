@@ -2,6 +2,8 @@ import type {
   LoginRequest,
   LoginResponse,
   MeResponse,
+  UpdateMeRequest,
+  ChangePasswordRequest,
   ConversationSummary,
   GeneratedQueryView,
 } from "@bi/contracts";
@@ -11,7 +13,12 @@ import { getAccessToken, setAccessToken, clearAccessToken } from "./auth-store";
 const BASE = "/api";
 
 /** Paths that must NOT trigger the auto-refresh loop on 401. */
-const NO_REFRESH_PATHS = new Set(["/auth/login", "/auth/refresh", "/auth/logout"]);
+const NO_REFRESH_PATHS = new Set([
+  "/auth/login",
+  "/auth/refresh",
+  "/auth/logout",
+  "/me/logout-all", // signing out — never auto-refresh mid-flight
+]);
 
 /**
  * Generic fetch wrapper. Injects Bearer token when available.
@@ -114,6 +121,25 @@ export function getSsoStartUrl(tenantSlug: string): string {
 /** GET /api/me → current user + capabilities. */
 export async function getMe(): Promise<MeResponse> {
   return request<MeResponse>("/me");
+}
+
+/** PATCH /api/me → update display name. */
+export async function updateMe(data: UpdateMeRequest): Promise<void> {
+  return request<void>("/me", { method: "PATCH", body: JSON.stringify(data) });
+}
+
+/** POST /api/me/password → change password (password-auth users only). */
+export async function changePassword(data: ChangePasswordRequest): Promise<void> {
+  return request<void>("/me/password", { method: "POST", body: JSON.stringify(data) });
+}
+
+/**
+ * POST /api/me/logout-all → invalidates all sessions for the current user.
+ * Sets token_invalidated_at in the tenant DB so future token refreshes are
+ * rejected. The in-memory access token must be cleared client-side after calling.
+ */
+export async function logoutAll(): Promise<void> {
+  return request<void>("/me/logout-all", { method: "POST" }, { skipRefresh: true });
 }
 
 // ─── Conversations ────────────────────────────────────────────────────────────

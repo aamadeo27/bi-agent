@@ -25,6 +25,7 @@
     "@node-rs/argon2": "^2.0.2",
     "@prisma/client": "^5.22.0",
     "@sentry/node": "^10.58.0",
+    "argon2": "^0.31.2",
     "cookie-parser": "^1.4.7",
     "express": "^4.21.1",
     "jose": "^6.0.0",
