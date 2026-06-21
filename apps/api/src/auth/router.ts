@@ -1,0 +1,99 @@
+import { Router } from "express";
+import type { Router as ExpressRouter, Request, Response } from "express";
+import { getPrisma } from "../db/client.js";
+import { login, refresh, logout } from "./auth-service.js";
+import { REFRESH_COOKIE_NAME } from "./token-service.js";
+import { LoginRequestSchema } from "@bi/contracts";
+import type { ApiErrorResponse } from "@bi/contracts";
+import { logger } from "../observability/logger.js";
+
+export const authRouter: ExpressRouter = Router();
+
+const IS_PROD = process.env["NODE_ENV"] === "production";
+
+/** Shared cookie options for the httpOnly refresh token cookie. */
+const COOKIE_BASE = {
+  httpOnly: true,
+  secure: IS_PROD,
+  sameSite: "strict" as const,
+  path: "/api/auth",
+};
+
+authRouter.post("/login", async (req: Request, res: Response) => {
+  const parsed = LoginRequestSchema.safeParse(req.body);
+  if (!parsed.success) {
+    const body: ApiErrorResponse = {
+      code: "VALIDATION",
+      message: "email and password are required",
+    };
+    res.status(400).json(body);
+    return;
+  }
+
+  try {
+    const result = await login(parsed.data.email, parsed.data.password, getPrisma());
+    res.cookie(REFRESH_COOKIE_NAME, result.refreshRaw, {
+      ...COOKIE_BASE,
+      maxAge: result.refreshExpiresAt.getTime() - Date.now(),
+    });
+    res.status(200).json({ accessToken: result.accessToken });
+  } catch (err: unknown) {
+    if ((err as { code?: string }).code === "AUTH") {
+      const body: ApiErrorResponse = {
+        code: "AUTH",
+        message: "Invalid credentials",
+      };
+      res.status(401).json(body);
+      return;
+    }
+    logger.error(err, "login error");
+    const body: ApiErrorResponse = { code: "INTERNAL", message: "Login failed" };
+    res.status(500).json(body);
+  }
+});
+
+authRouter.post("/refresh", async (req: Request, res: Response) => {
+  const raw = (req.cookies as Record<string, string | undefined>)[REFRESH_COOKIE_NAME];
+  if (!raw) {
+    const body: ApiErrorResponse = {
+      code: "AUTH",
+      message: "Missing refresh token",
+    };
+    res.status(401).json(body);
+    return;
+  }
+
+  try {
+    const result = await refresh(raw, getPrisma());
+    res.cookie(REFRESH_COOKIE_NAME, result.refreshRaw, {
+      ...COOKIE_BASE,
+      maxAge: result.refreshExpiresAt.getTime() - Date.now(),
+    });
+    res.status(200).json({ accessToken: result.accessToken });
+  } catch (err: unknown) {
+    if ((err as { code?: string }).code === "AUTH") {
+      const body: ApiErrorResponse = {
+        code: "AUTH",
+        message: "Invalid or expired refresh token",
+      };
+      res.status(401).json(body);
+      return;
+    }
+    logger.error(err, "refresh error");
+    const body: ApiErrorResponse = { code: "INTERNAL", message: "Token refresh failed" };
+    res.status(500).json(body);
+  }
+});
+
+authRouter.post("/logout", async (req: Request, res: Response) => {
+  const raw = (req.cookies as Record<string, string | undefined>)[REFRESH_COOKIE_NAME];
+  if (raw) {
+    try {
+      await logout(raw, getPrisma());
+    } catch {
+      // Best-effort — still clear cookie and return 204.
+    }
+  }
+  res.clearCookie(REFRESH_COOKIE_NAME, COOKIE_BASE);
+  res.status(204).send();
+});
