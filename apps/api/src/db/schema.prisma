@@ -18,6 +18,8 @@ model Tenant {
   createdAt   DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt   DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
 
+  ssoConfig TenantSsoConfig?
+
   @@map("tenants")
   @@schema("platform")
 }
@@ -62,6 +64,23 @@ enum UserStatus {
   active
   suspended
 
+  @@schema("platform")
+}
+
+/// Per-tenant OIDC / SSO configuration. clientSecret should be encrypted at rest (vault) before v1.
+model TenantSsoConfig {
+  id           String   @id
+  tenantId     String   @unique @map("tenant_id")
+  issuer       String   @db.VarChar(512)
+  clientId     String   @map("client_id") @db.VarChar(256)
+  clientSecret String   @map("client_secret") @db.Text
+  callbackUrl  String   @map("callback_url") @db.VarChar(512)
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("tenant_sso_configs")
   @@schema("platform")
 }
 

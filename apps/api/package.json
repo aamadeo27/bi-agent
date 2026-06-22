@@ -29,6 +29,7 @@
     "cookie-parser": "^1.4.7",
     "express": "^4.21.1",
     "jose": "^6.0.0",
+    "openid-client": "^5.7.0",
     "pino": "^9.5.0",
     "pino-http": "^11.0.0",
     "zod": "^3.23.8"
