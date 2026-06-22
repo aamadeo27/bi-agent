@@ -51,6 +51,7 @@ const ACTIVE_USER = {
   status: "active" as const,
   tenantId: "tenant-1",
   roleId: "role-viewer",
+  ssoSubject: null,
   createdAt: new Date(),
   updatedAt: new Date(),
   refreshTokens: [],

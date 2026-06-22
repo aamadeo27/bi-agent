@@ -2,17 +2,21 @@
  * Per-tenant SSO / OIDC — auth-code flow with PKCE.
  *
  * State lifecycle:
- *   /start  → generate PKCE verifier + OIDC state/nonce → sign into short-lived
- *             httpOnly cookie → redirect to IdP.
- *   /callback → verify cookie signature + expiry → exchange code → extract email
- *              claim → find invited/active tenant user → issue our JWT + refresh.
+ *   /start    → generate PKCE verifier + OIDC state/nonce → sign into short-lived
+ *               httpOnly cookie → redirect to IdP.
+ *   /callback → verify cookie signature + expiry → exchange code for tokens →
+ *               extract OIDC subject → find/bind tenant user → issue JWT + refresh.
  *
- * Matching strategy: email claim from the id_token is matched against platform
- * users for the resolved tenant.  Subjects not present as invited/active users
- * are rejected — no auto-provisioning (invite-first model).
+ * Matching strategy (invite-first, subject-bound):
+ *   1. Primary lookup by ssoSubject (already bound on a prior login).
+ *   2. First-login fallback: find by email (case-insensitive, null ssoSubject) →
+ *      bind the subject and continue.
+ *   3. No match → AUTH error; user must be invited first.
  *
- * NOTE: clientSecret is stored as plaintext here; production should encrypt at
- * rest via the vault before v1 (tracked separately).
+ * This ensures each OIDC subject is cryptographically bound to exactly one
+ * platform user after first login, and subsequent logins are subject-only.
+ *
+ * NOTE: clientSecret is stored as plaintext; encrypt at rest via vault before v1.
  */
 import { Issuer, generators } from "openid-client";
 import type { PrismaClient } from "@prisma/client";
@@ -52,10 +56,15 @@ export async function signSsoState(payload: SsoStatePayload): Promise<string> {
 /**
  * Verify and decode the SSO state cookie.
  * Throws { code: "AUTH" } if the token is expired, tampered, or missing fields.
+ * Throws { code: "INTERNAL" } if JWT_SECRET is not configured (config error, not
+ * an auth failure — must not be swallowed as AUTH).
  */
 export async function verifySsoState(token: string): Promise<SsoStatePayload> {
+  // Resolve the key BEFORE the try-catch so a missing JWT_SECRET propagates as
+  // an INTERNAL config error rather than being caught and re-thrown as AUTH.
+  const key = getSecretKey();
   try {
-    const { payload } = await jwtVerify(token, getSecretKey(), {
+    const { payload } = await jwtVerify(token, key, {
       algorithms: ["HS256"],
     });
     const { oidcState, nonce, codeVerifier, tenantSlug } =
@@ -161,14 +170,19 @@ export async function buildSsoStartUrl(
 // ── Callback ──────────────────────────────────────────────────────────────────
 
 /**
- * Exchange the authorization code and map the identity to a platform user.
+ * Exchange the authorization code and map the OIDC subject to a platform user.
+ *
+ * Subject-binding (invite-first model):
+ *   1. Look up user by ssoSubject (already bound on a prior SSO login).
+ *   2. First-login: look up by email (lowercase) with null ssoSubject → bind
+ *      the subject so subsequent logins use subject lookup directly.
+ *   3. No match → AUTH; user must be invited before SSO can be used.
  *
  * Rejects with AUTH when:
- *   - OIDC state param does not match the signed cookie value.
- *   - The id_token carries no email claim.
- *   - No invited/active user with that email exists in the tenant.
- *
- * Activates an 'invited' user on first successful SSO login.
+ *   - OIDC state param does not match the signed cookie.
+ *   - No matching invited/active tenant user exists.
+ *   - User already has a different ssoSubject bound (prevents subject swapping).
+ * Throws INTERNAL when tenantId is unexpectedly null (data invariant violation).
  */
 export async function handleSsoCallback(
   code: string,
@@ -200,32 +214,61 @@ export async function handleSsoCallback(
   );
 
   const claims = tokenSet.claims();
-  const email = claims.email as string | undefined;
+  // `sub` is guaranteed present in all OIDC id_tokens.
+  const sub = claims.sub;
+  // Normalize email to lowercase to match invite-stored emails.
+  const email = (claims.email as string | undefined)?.toLowerCase();
 
-  if (!email) {
-    throw Object.assign(
-      new Error("OIDC id_token missing required email claim"),
-      { code: "AUTH" }
-    );
+  // ── Phase 1: primary lookup by bound subject ────────────────────────────────
+  let user = await db.user.findUnique({ where: { ssoSubject: sub } });
+
+  if (user) {
+    // Subject already bound — verify it belongs to this tenant and is eligible.
+    if (
+      user.tenantId !== config.tenantId ||
+      (user.status !== "invited" && user.status !== "active")
+    ) {
+      throw Object.assign(
+        new Error("SSO subject not authorised for this tenant"),
+        { code: "AUTH" }
+      );
+    }
+  } else {
+    // ── Phase 2: first-login binding via email ────────────────────────────────
+    if (!email) {
+      throw Object.assign(
+        new Error(
+          "OIDC id_token missing email claim; cannot resolve unbound subject"
+        ),
+        { code: "AUTH" }
+      );
+    }
+
+    const byEmail = await db.user.findUnique({ where: { email } });
+
+    if (
+      !byEmail ||
+      byEmail.tenantId !== config.tenantId ||
+      (byEmail.status !== "invited" && byEmail.status !== "active") ||
+      byEmail.ssoSubject !== null // already bound to a different subject
+    ) {
+      throw Object.assign(
+        new Error(
+          "OIDC subject not linked to an invited/active tenant user — invite required"
+        ),
+        { code: "AUTH" }
+      );
+    }
+
+    // Bind the OIDC subject to this user record (idempotent on retry because
+    // subsequent logins hit Phase 1 via the unique ssoSubject index).
+    user = await db.user.update({
+      where: { id: byEmail.id },
+      data: { ssoSubject: sub },
+    });
   }
 
-  // Match by email (globally unique in platform) then verify same tenant.
-  const user = await db.user.findUnique({ where: { email } });
-
-  if (
-    !user ||
-    user.tenantId !== config.tenantId ||
-    (user.status !== "invited" && user.status !== "active")
-  ) {
-    throw Object.assign(
-      new Error(
-        "OIDC subject not linked to an invited/active tenant user — invite required"
-      ),
-      { code: "AUTH" }
-    );
-  }
-
-  // Activate invited user on first successful SSO login.
+  // ── Activate invited user on first successful SSO login ─────────────────────
   const effectiveUser =
     user.status === "invited"
       ? await db.user.update({
@@ -234,9 +277,18 @@ export async function handleSsoCallback(
         })
       : user;
 
+  // tenantId must be set — it is verified above, so null here is a data invariant
+  // violation that should never happen in practice.
+  if (!effectiveUser.tenantId) {
+    throw Object.assign(
+      new Error("User tenantId is null after tenant verification — data invariant violated"),
+      { code: "INTERNAL" }
+    );
+  }
+
   const accessToken = await signAccessToken({
     sub: effectiveUser.id,
-    tenantId: effectiveUser.tenantId ?? "",
+    tenantId: effectiveUser.tenantId,
     roleId: effectiveUser.roleId ?? null,
   });
 

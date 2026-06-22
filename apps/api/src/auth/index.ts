@@ -6,6 +6,5 @@ export {
   buildSsoStartUrl,
   handleSsoCallback,
   verifySsoState,
-  signSsoState,
   SSO_STATE_COOKIE,
 } from "./sso-service.js";
