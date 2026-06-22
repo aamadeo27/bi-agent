@@ -28,6 +28,19 @@ export const InviteAcceptRequestSchema = z.object({
 });
 export type InviteAcceptRequest = z.infer<typeof InviteAcceptRequestSchema>;
 
+/** POST /api/admin/users/invite — tenant-admin sends an invite. */
+export const InviteUserRequestSchema = z.object({
+  email: z.string().email(),
+  displayName: z.string().min(1).max(256),
+  roleId: z.string().optional(),
+});
+export type InviteUserRequest = z.infer<typeof InviteUserRequestSchema>;
+
+export const InviteUserResponseSchema = z.object({
+  userId: z.string(),
+});
+export type InviteUserResponse = z.infer<typeof InviteUserResponseSchema>;
+
 /** GET /api/me — full profile needed by the SPA shell (S10). */
 export const MeResponseSchema = z.object({
   user: z.object({

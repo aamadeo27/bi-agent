@@ -2,6 +2,7 @@ import { Router } from "express";
 import type { Router as ExpressRouter, Request, Response } from "express";
 import { getPrisma } from "../db/client.js";
 import { login, refresh, logout } from "./auth-service.js";
+import { acceptInvite } from "./invite-service.js";
 import { REFRESH_COOKIE_NAME } from "./token-service.js";
 import {
   loadSsoConfig,
@@ -10,7 +11,7 @@ import {
   verifySsoState,
   SSO_STATE_COOKIE,
 } from "./sso-service.js";
-import { LoginRequestSchema } from "@bi/contracts";
+import { LoginRequestSchema, InviteAcceptRequestSchema } from "@bi/contracts";
 import type { ApiErrorResponse } from "@bi/contracts";
 import { logger } from "../observability/logger.js";
 
@@ -88,6 +89,51 @@ authRouter.post("/refresh", async (req: Request, res: Response) => {
     }
     logger.error(err, "refresh error");
     const body: ApiErrorResponse = { code: "INTERNAL", message: "Token refresh failed" };
+    res.status(500).json(body);
+  }
+});
+
+authRouter.post("/invite/accept", async (req: Request, res: Response) => {
+  const parsed = InviteAcceptRequestSchema.safeParse(req.body);
+  if (!parsed.success) {
+    const body: ApiErrorResponse = {
+      code: "VALIDATION",
+      message: "token is required",
+    };
+    res.status(400).json(body);
+    return;
+  }
+
+  try {
+    const result = await acceptInvite(parsed.data, getPrisma());
+    res.cookie(REFRESH_COOKIE_NAME, result.refreshRaw, {
+      ...COOKIE_BASE,
+      maxAge: result.refreshExpiresAt.getTime() - Date.now(),
+    });
+    res.status(200).json({ accessToken: result.accessToken });
+  } catch (err: unknown) {
+    const code = (err as { code?: string }).code;
+    if (code === "AUTH") {
+      const body: ApiErrorResponse = {
+        code: "AUTH",
+        message: "Invalid, expired, or already-used invite token",
+      };
+      res.status(401).json(body);
+      return;
+    }
+    if (code === "VALIDATION") {
+      const body: ApiErrorResponse = {
+        code: "VALIDATION",
+        message: (err as Error).message,
+      };
+      res.status(400).json(body);
+      return;
+    }
+    logger.error(err, "invite accept error");
+    const body: ApiErrorResponse = {
+      code: "INTERNAL",
+      message: "Invite accept failed",
+    };
     res.status(500).json(body);
   }
 });
