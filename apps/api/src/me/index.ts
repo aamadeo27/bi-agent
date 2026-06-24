@@ -73,10 +73,16 @@ meRouter.get("/", async (req, res) => {
 
     const { user, roleRow } = data;
 
-    let capabilities = { canInspectQuery: false };
+    let capabilities = { canInspectQuery: false, isAdmin: false };
     if (roleRow) {
-      const caps = JSON.parse(roleRow.capabilities) as { canInspectQuery?: boolean };
-      capabilities = { canInspectQuery: Boolean(caps.canInspectQuery) };
+      const caps = JSON.parse(roleRow.capabilities) as {
+        canInspectQuery?: boolean;
+        isAdmin?: boolean;
+      };
+      capabilities = {
+        canInspectQuery: Boolean(caps.canInspectQuery),
+        isAdmin: Boolean(caps.isAdmin),
+      };
     }
 
     const authMethods = JSON.parse(user.auth_methods) as Array<"password" | "sso">;

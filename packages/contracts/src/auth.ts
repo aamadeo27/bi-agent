@@ -64,6 +64,7 @@ export const MeResponseSchema = z.object({
   role: z.object({ id: z.string(), name: z.string() }).nullable(),
   capabilities: z.object({
     canInspectQuery: z.boolean(),
+    isAdmin: z.boolean(),
   }),
   tenant: z.object({ id: z.string(), displayName: z.string() }),
 });
