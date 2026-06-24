@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import express, { type Application } from "express";
 import request from "supertest";
 import type { Prisma } from "@prisma/client";
@@ -235,7 +235,7 @@ describe("PATCH /api/admin/roles/:id", () => {
     const updated = { ...ROLE_ROW, name: "Senior Analysts" };
     // First call: SELECT FOR UPDATE (returns current); second: UPDATE RETURNING (returns updated)
     let callCount = 0;
-    const app = buildRouterApp(ADMIN_AUTH, (sql) => {
+    const app = buildRouterApp(ADMIN_AUTH, (_sql) => {
       callCount++;
       if (callCount === 1) return [ROLE_ROW]; // SELECT FOR UPDATE
       return [updated]; // UPDATE RETURNING
