@@ -33,6 +33,14 @@ export async function provisionTenant(
       await tx.$executeRawUnsafe(
         `CREATE UNIQUE INDEX IF NOT EXISTS "roles_name_key" ON "${s}"."roles"("name")`
       );
+      // Seed the Admin role with canInspectQuery:true; idempotent via ON CONFLICT.
+      await tx.$executeRawUnsafe(
+        `-- IF NOT EXISTS (name='Admin'): insert handled by ON CONFLICT DO NOTHING
+         INSERT INTO "${s}"."roles" (id, name, capabilities, created_at, updated_at)
+         VALUES ($1, 'Admin', '{"canInspectQuery":true}'::jsonb, NOW(), NOW())
+         ON CONFLICT (name) DO NOTHING`,
+        crypto.randomUUID(),
+      );
 
       // Data sources — connection metadata + encrypted config
       await tx.$executeRawUnsafe(`
