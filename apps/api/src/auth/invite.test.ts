@@ -51,8 +51,8 @@ function makeDb(overrides: Record<string, unknown> = {}) {
       create: vi.fn(),
       findUniqueOrThrow: vi.fn(),
       update: vi.fn(),
+      delete: vi.fn(),
     },
-    // Prisma naming: camelCase for the model accessor
     inviteToken: {
       create: vi.fn(),
       findUnique: vi.fn(),
@@ -87,6 +87,7 @@ const INVITED_USER = {
   id: USER_ID,
   email: "newuser@example.com",
   passwordHash: null as string | null,
+  ssoSubject: null as string | null,
   displayName: "New User",
   status: "invited" as const,
   tenantId: TENANT_ID,
@@ -121,12 +122,22 @@ afterEach(() => {
 
 // ── createInvite ──────────────────────────────────────────────────────────────
 
+/** Build a $transaction mock for createInvite — calls back with a fake tx client. */
+function makeCreateInviteTxMock() {
+  const txUser = { create: vi.fn().mockResolvedValue(INVITED_USER) };
+  const txToken = { create: vi.fn().mockResolvedValue({}) };
+  const mockTx = { user: txUser, inviteToken: txToken };
+  return { mockTx, txUser, txToken };
+}
+
 describe("createInvite — happy path", () => {
-  it("creates platform user, tenant entry, token record, and sends email", async () => {
+  it("creates platform user + invite token atomically, creates tenant entry, sends email", async () => {
     const db = makeDb();
-    vi.mocked(db.user.findUnique).mockResolvedValue(null); // no existing user
-    vi.mocked(db.user.create).mockResolvedValue(INVITED_USER);
-    vi.mocked(db.inviteToken.create).mockResolvedValue({} as never);
+    const { mockTx, txUser, txToken } = makeCreateInviteTxMock();
+    vi.mocked(db.user.findUnique).mockResolvedValue(null);
+    vi.mocked(db.$transaction).mockImplementation(async (fn: unknown) =>
+      (fn as (tx: unknown) => Promise<unknown>)(mockTx)
+    );
 
     const result = await createInvite(
       {
@@ -140,8 +151,9 @@ describe("createInvite — happy path", () => {
     );
 
     expect(result.userId).toBeTypeOf("string");
-    expect(db.user.create).toHaveBeenCalledOnce();
-    expect(db.inviteToken.create).toHaveBeenCalledOnce();
+    expect(db.$transaction).toHaveBeenCalledOnce();
+    expect(txUser.create).toHaveBeenCalledOnce();
+    expect(txToken.create).toHaveBeenCalledOnce();
     expect(withTenantMod.withTenant).toHaveBeenCalledOnce();
     expect(MAILER_STUB.sendInvite).toHaveBeenCalledOnce();
 
@@ -150,11 +162,13 @@ describe("createInvite — happy path", () => {
     expect(mailArgs.inviteUrl).toContain("token=");
   });
 
-  it("passes roleId to user create and tenant insert when supplied", async () => {
+  it("passes roleId into the transaction user.create call", async () => {
     const db = makeDb();
+    const { mockTx, txUser } = makeCreateInviteTxMock();
     vi.mocked(db.user.findUnique).mockResolvedValue(null);
-    vi.mocked(db.user.create).mockResolvedValue(INVITED_USER);
-    vi.mocked(db.inviteToken.create).mockResolvedValue({} as never);
+    vi.mocked(db.$transaction).mockImplementation(async (fn: unknown) =>
+      (fn as (tx: unknown) => Promise<unknown>)(mockTx)
+    );
 
     await createInvite(
       {
@@ -168,8 +182,31 @@ describe("createInvite — happy path", () => {
       MAILER_STUB
     );
 
-    const createCall = vi.mocked(db.user.create).mock.calls[0]![0];
+    const createCall = txUser.create.mock.calls[0]![0] as { data: { roleId: string } };
     expect(createCall.data.roleId).toBe("role-viewer");
+  });
+
+  it("cleans up platform records when withTenant insert fails", async () => {
+    const db = makeDb();
+    const { mockTx } = makeCreateInviteTxMock();
+    vi.mocked(db.user.findUnique).mockResolvedValue(null);
+    vi.mocked(db.$transaction).mockImplementation(async (fn: unknown) =>
+      (fn as (tx: unknown) => Promise<unknown>)(mockTx)
+    );
+    vi.mocked(withTenantMod.withTenant).mockRejectedValueOnce(new Error("tenant insert failed"));
+    // Stub the cleanup delete
+    vi.mocked(db.user.delete).mockResolvedValue(INVITED_USER);
+
+    await expect(
+      createInvite(
+        { tenantId: TENANT_ID, email: "newuser@example.com", displayName: "New User", invitedByUserId: "admin-1" },
+        db,
+        MAILER_STUB
+      )
+    ).rejects.toThrow("tenant insert failed");
+
+    expect(db.user.delete).toHaveBeenCalledOnce();
+    expect(MAILER_STUB.sendInvite).not.toHaveBeenCalled();
   });
 });
 
@@ -193,39 +230,47 @@ describe("createInvite — duplicate email", () => {
 
 // ── acceptInvite — happy path / round trip ────────────────────────────────────
 
-describe("acceptInvite — happy path", () => {
+/**
+ * Build a $transaction mock for acceptInvite.
+ * The new implementation returns the updated user from the transaction directly,
+ * so the tx.user.update mock must resolve with the activated user row.
+ */
+function makeAcceptTxMock(userRow: typeof ACTIVE_USER) {
+  const txTokenUpdate = vi.fn().mockResolvedValue({});
+  const txUserUpdate = vi.fn().mockResolvedValue(userRow);
+  const mockTx = {
+    inviteToken: { update: txTokenUpdate },
+    user: { update: txUserUpdate },
+  };
+  return { mockTx, txTokenUpdate, txUserUpdate };
+}
+
+describe("acceptInvite — password path (happy path)", () => {
   it("activates user and returns accessToken + refreshRaw", async () => {
     const db = makeDb();
+    const { mockTx } = makeAcceptTxMock(ACTIVE_USER);
     vi.mocked(db.inviteToken.findUnique).mockResolvedValue(makeTokenRecord());
-    vi.mocked(db.user.findUniqueOrThrow).mockResolvedValue(ACTIVE_USER);
-    // Simulate $transaction calling its callback
-    vi.mocked(db.$transaction).mockImplementation(async (fn: unknown) => {
-      return (fn as (tx: unknown) => Promise<unknown>)({
-        inviteToken: { update: vi.fn() },
-        user: { update: vi.fn() },
-      });
-    });
+    vi.mocked(db.$transaction).mockImplementation(async (fn: unknown) =>
+      (fn as (tx: unknown) => Promise<unknown>)(mockTx)
+    );
 
     const result = await acceptInvite({ token: "raw-token", password: "NewPass123!" }, db);
 
     expect(result.accessToken).toBeTypeOf("string");
     expect(result.refreshRaw).toBe("raw-refresh");
     expect(argon2.hash).toHaveBeenCalledWith("NewPass123!");
+    // withTenant runs BEFORE the $transaction (step 1 then step 2).
     expect(withTenantMod.withTenant).toHaveBeenCalledOnce();
+    // No separate findUniqueOrThrow — user comes from the transaction return value.
+    expect(db.user.findUniqueOrThrow).not.toHaveBeenCalled();
   });
 
-  it("access token carries correct claims after accept", async () => {
+  it("access token carries correct claims after password accept", async () => {
     const db = makeDb();
+    const { mockTx } = makeAcceptTxMock({ ...ACTIVE_USER, roleId: "role-member" as string | null });
     vi.mocked(db.inviteToken.findUnique).mockResolvedValue(makeTokenRecord());
-    vi.mocked(db.user.findUniqueOrThrow).mockResolvedValue({
-      ...ACTIVE_USER,
-      roleId: "role-member",
-    });
     vi.mocked(db.$transaction).mockImplementation(async (fn: unknown) =>
-      (fn as (tx: unknown) => Promise<unknown>)({
-        inviteToken: { update: vi.fn() },
-        user: { update: vi.fn() },
-      })
+      (fn as (tx: unknown) => Promise<unknown>)(mockTx)
     );
 
     const { accessToken } = await acceptInvite({ token: "raw-token", password: "NewPass123!" }, db);
@@ -234,6 +279,24 @@ describe("acceptInvite — happy path", () => {
     expect(payload["sub"]).toBe(USER_ID);
     expect(payload["tenantId"]).toBe(TENANT_ID);
     expect(payload["roleId"]).toBe("role-member");
+  });
+});
+
+describe("acceptInvite — SSO path", () => {
+  it("activates user with ssoSubject (no password hash)", async () => {
+    const db = makeDb();
+    const { mockTx } = makeAcceptTxMock(ACTIVE_USER);
+    vi.mocked(db.inviteToken.findUnique).mockResolvedValue(makeTokenRecord());
+    vi.mocked(db.$transaction).mockImplementation(async (fn: unknown) =>
+      (fn as (tx: unknown) => Promise<unknown>)(mockTx)
+    );
+
+    const result = await acceptInvite({ token: "raw-token", ssoSubject: "oidc|sub-123" }, db);
+
+    expect(result.accessToken).toBeTypeOf("string");
+    // SSO path must NOT hash a password.
+    expect(argon2.hash).not.toHaveBeenCalled();
+    expect(withTenantMod.withTenant).toHaveBeenCalledOnce();
   });
 });
 
@@ -276,8 +339,8 @@ describe("acceptInvite — already-used token", () => {
   });
 });
 
-describe("acceptInvite — missing password", () => {
-  it("throws VALIDATION when no password provided", async () => {
+describe("acceptInvite — neither password nor ssoSubject", () => {
+  it("throws VALIDATION when neither credential is provided", async () => {
     const db = makeDb();
     vi.mocked(db.inviteToken.findUnique).mockResolvedValue(makeTokenRecord());
 
@@ -286,5 +349,6 @@ describe("acceptInvite — missing password", () => {
     ).rejects.toMatchObject({ code: "VALIDATION" });
 
     expect(argon2.hash).not.toHaveBeenCalled();
+    expect(withTenantMod.withTenant).not.toHaveBeenCalled();
   });
 });

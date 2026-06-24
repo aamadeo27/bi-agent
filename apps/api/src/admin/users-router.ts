@@ -13,21 +13,23 @@ export const adminUsersRouter: ExpressRouter = Router();
  * POST /api/admin/users/invite
  *
  * Creates an `invited` user and dispatches a signed, expiring invite token.
- * Caller must be authenticated (authMiddleware) with a non-null roleId.
  *
- * TODO(T3.x): replace roleId-presence check with a proper canAdmin capability
- * once the RBAC admin layer is in place.
+ * SECURITY RISK (known, tracked as T3.x): the current admin guard only checks
+ * that the caller has *any* role assigned (roleId !== null). Any authenticated
+ * user with a role can therefore invite new users. This is intentionally
+ * over-permissive until the T3.x RBAC admin layer defines a `canAdmin`
+ * capability and gates this endpoint on it. Do not promote this pattern to
+ * other sensitive write endpoints.
  */
 adminUsersRouter.post("/invite", async (req: Request, res: Response) => {
-  if (!req.auth) {
-    const body: ApiErrorResponse = { code: "AUTH", message: "Not authenticated" };
-    res.status(401).json(body);
-    return;
-  }
+  // req.auth is guaranteed non-null here — protectedRouter runs authMiddleware
+  // before any handler under /api, so this branch is only reached with a valid JWT.
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+  const auth = req.auth!;
 
-  // Minimal admin guard — user must have an assigned role.
-  // Full capability-based check will be added in T3.x.
-  if (!req.auth.roleId) {
+  // Temporary admin gate: any user with an assigned role may invite.
+  // Replace with capability check once T3.x ships.
+  if (!auth.roleId) {
     const body: ApiErrorResponse = {
       code: "AUTH",
       message: "Admin role required",
@@ -49,11 +51,11 @@ adminUsersRouter.post("/invite", async (req: Request, res: Response) => {
   try {
     const result = await createInvite(
       {
-        tenantId: req.auth.tenantId,
+        tenantId: auth.tenantId,
         email: parsed.data.email,
         displayName: parsed.data.displayName,
         roleId: parsed.data.roleId,
-        invitedByUserId: req.auth.userId,
+        invitedByUserId: auth.userId,
       },
       getPrisma(),
       consoleMailer
@@ -66,7 +68,7 @@ adminUsersRouter.post("/invite", async (req: Request, res: Response) => {
         code: "VALIDATION",
         message: (err as Error).message,
       };
-      res.status(409).json(body);
+      res.status(400).json(body);
       return;
     }
     logger.error(err, "invite error");
