@@ -24,7 +24,6 @@ export const adminUsersRouter: ExpressRouter = Router();
 adminUsersRouter.post("/invite", async (req: Request, res: Response) => {
   // req.auth is guaranteed non-null here — protectedRouter runs authMiddleware
   // before any handler under /api, so this branch is only reached with a valid JWT.
-  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
   const auth = req.auth!;
 
   // Temporary admin gate: any user with an assigned role may invite.
