@@ -182,7 +182,7 @@ describe("POST /api/admin/roles", () => {
 
   it("defaults canInspectQuery to false when capabilities omitted", async () => {
     let capturedArgs: unknown[] = [];
-    const app = buildRouterApp(ADMIN_AUTH, (sql, ...args) => {
+    const app = buildRouterApp(ADMIN_AUTH, (_sql, ...args) => {
       capturedArgs = args;
       return [ROLE_ROW];
     });
