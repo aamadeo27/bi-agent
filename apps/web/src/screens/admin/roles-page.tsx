@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient, useQueries } from "@tanstack/react-query";
 import * as Dialog from "@radix-ui/react-dialog";
 import * as Toast from "@radix-ui/react-toast";
-import type { Role, User } from "@bi/contracts";
+import type { Role } from "@bi/contracts";
 import {
   listRoles,
   createRole,
@@ -624,7 +624,7 @@ export function RolesPage() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((role, idx) => {
+                {filtered.map((role) => {
                   // Find index in the full (unfiltered) roles array for grantQueries alignment
                   const fullIdx = roles.findIndex((r) => r.id === role.id);
                   return (
