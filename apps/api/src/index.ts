@@ -8,6 +8,7 @@ import { authMiddleware, initAuth } from "./middleware/auth.js";
 import { tenantScopeMiddleware } from "./middleware/tenant-scope.js";
 import { meRouter } from "./me/index.js";
 import { authRouter } from "./auth/router.js";
+import { adminUsersRouter } from "./admin/users-router.js";
 
 // Initialize the dev-only error-tracking sink. No-ops gracefully when
 // SENTRY_DSN is unset (the default in dev/bootstrap) — see error-sink.ts.
@@ -37,6 +38,7 @@ protectedRouter.use(authMiddleware);
 protectedRouter.use(tenantScopeMiddleware);
 
 protectedRouter.use("/me", meRouter);
+protectedRouter.use("/admin/users", adminUsersRouter);
 
 app.use("/api", protectedRouter);
 

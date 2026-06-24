@@ -18,8 +18,6 @@ model Tenant {
   createdAt   DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt   DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  ssoConfig TenantSsoConfig?
-
   @@map("tenants")
   @@schema("platform")
 }
@@ -45,16 +43,16 @@ model GlobalConfig {
 model User {
   id           String     @id
   email        String     @unique @db.VarChar(320)
-  passwordHash String     @map("password_hash") @db.Text
+  passwordHash String?    @map("password_hash") @db.Text
   displayName  String     @map("display_name") @db.VarChar(256)
   status       UserStatus @default(active)
   tenantId     String?    @map("tenant_id")
   roleId       String?    @map("role_id")
-  ssoSubject   String?    @unique @map("sso_subject") @db.Text
   createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt    DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   refreshTokens RefreshToken[]
+  inviteTokens  InviteToken[]
 
   @@map("users")
   @@schema("platform")
@@ -68,20 +66,19 @@ enum UserStatus {
   @@schema("platform")
 }
 
-/// Per-tenant OIDC / SSO configuration. clientSecret should be encrypted at rest (vault) before v1.
-model TenantSsoConfig {
-  id           String   @id
-  tenantId     String   @unique @map("tenant_id")
-  issuer       String   @db.VarChar(512)
-  clientId     String   @map("client_id") @db.VarChar(256)
-  clientSecret String   @map("client_secret") @db.Text
-  callbackUrl  String   @map("callback_url") @db.VarChar(512)
-  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+/// Signed invite tokens — one row per pending invite; marked used on accept.
+model InviteToken {
+  id        String    @id
+  tokenHash String    @unique @map("token_hash") @db.VarChar(64)
+  userId    String    @map("user_id")
+  tenantId  String    @map("tenant_id")
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz(3)
+  usedAt    DateTime? @map("used_at") @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
 
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@map("tenant_sso_configs")
+  @@map("invite_tokens")
   @@schema("platform")
 }
 

@@ -22,11 +22,35 @@ export const LoginResponseSchema = z.object({
 export type LoginResponse = z.infer<typeof LoginResponseSchema>;
 
 /** POST /api/auth/invite/accept */
-export const InviteAcceptRequestSchema = z.object({
-  token: z.string(),
-  password: z.string().min(8).optional(),
-});
+export const InviteAcceptRequestSchema = z
+  .object({
+    token: z.string(),
+    /** Password-based activation — set a new password for the invited account. */
+    password: z.string().min(8).optional(),
+    /**
+     * SSO-based activation — the verified OIDC `sub` claim from a completed IdP flow.
+     * Activates the user without a password, recording auth_methods=['sso'].
+     */
+    ssoSubject: z.string().optional(),
+  })
+  .refine((d) => Boolean(d.password) || Boolean(d.ssoSubject), {
+    message: "Either password or ssoSubject is required",
+    path: ["password"],
+  });
 export type InviteAcceptRequest = z.infer<typeof InviteAcceptRequestSchema>;
+
+/** POST /api/admin/users/invite — tenant-admin sends an invite. */
+export const InviteUserRequestSchema = z.object({
+  email: z.string().email(),
+  displayName: z.string().min(1).max(256),
+  roleId: z.string().optional(),
+});
+export type InviteUserRequest = z.infer<typeof InviteUserRequestSchema>;
+
+export const InviteUserResponseSchema = z.object({
+  userId: z.string(),
+});
+export type InviteUserResponse = z.infer<typeof InviteUserResponseSchema>;
 
 /** GET /api/me — full profile needed by the SPA shell (S10). */
 export const MeResponseSchema = z.object({
