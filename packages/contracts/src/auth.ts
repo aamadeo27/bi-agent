@@ -22,17 +22,21 @@ export const LoginResponseSchema = z.object({
 export type LoginResponse = z.infer<typeof LoginResponseSchema>;
 
 /** POST /api/auth/invite/accept */
-export const InviteAcceptRequestSchema = z.object({
-  token: z.string(),
-  /** Password-based activation — set a new password for the invited account. */
-  password: z.string().min(8).optional(),
-  /**
-   * SSO-based activation — the verified OIDC `sub` claim from a completed IdP flow.
-   * Activates the user without a password, recording auth_methods=['sso'].
-   * Exactly one of password or ssoSubject must be provided.
-   */
-  ssoSubject: z.string().optional(),
-});
+export const InviteAcceptRequestSchema = z
+  .object({
+    token: z.string(),
+    /** Password-based activation — set a new password for the invited account. */
+    password: z.string().min(8).optional(),
+    /**
+     * SSO-based activation — the verified OIDC `sub` claim from a completed IdP flow.
+     * Activates the user without a password, recording auth_methods=['sso'].
+     */
+    ssoSubject: z.string().optional(),
+  })
+  .refine((d) => Boolean(d.password) || Boolean(d.ssoSubject), {
+    message: "Either password or ssoSubject is required",
+    path: ["password"],
+  });
 export type InviteAcceptRequest = z.infer<typeof InviteAcceptRequestSchema>;
 
 /** POST /api/admin/users/invite — tenant-admin sends an invite. */
