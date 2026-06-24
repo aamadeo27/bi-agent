@@ -610,15 +610,21 @@ describe("LoginResponseSchema", () => {
 });
 
 describe("InviteAcceptRequestSchema", () => {
-  it("parses with token only", () => {
+  it("rejects token only (neither password nor ssoSubject)", () => {
     expect(() =>
       InviteAcceptRequestSchema.parse({ token: "inv-tok" })
-    ).not.toThrow();
+    ).toThrow();
   });
 
   it("parses with token + password", () => {
     expect(() =>
       InviteAcceptRequestSchema.parse({ token: "inv-tok", password: "newPass123" })
+    ).not.toThrow();
+  });
+
+  it("parses with token + ssoSubject", () => {
+    expect(() =>
+      InviteAcceptRequestSchema.parse({ token: "inv-tok", ssoSubject: "oidc|sub-1" })
     ).not.toThrow();
   });
 
