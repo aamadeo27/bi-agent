@@ -21,6 +21,10 @@ vi.mock("./lib/api-client", async (importOriginal) => {
     listRoles: vi.fn().mockResolvedValue([]),
     listAdminUsers: vi.fn().mockResolvedValue([]),
     listRoleGrants: vi.fn().mockResolvedValue([]),
+    putRoleGrants: vi.fn().mockResolvedValue(undefined),
+    // S5 Permission Editor
+    listDataSources: vi.fn().mockResolvedValue([]),
+    getSchemaTree: vi.fn().mockResolvedValue({ dataSourceId: "ds-1", schemas: [] }),
   };
 });
 
@@ -102,7 +106,8 @@ describe("App routing", () => {
 
   it("renders S5 Permission Editor on /admin/roles/:roleId/permissions", async () => {
     renderApp("/admin/roles/role-1/permissions");
-    await waitFor(() => expect(screen.getByText("Permission Editor")).toBeInTheDocument());
+    // Page renders role + "Permissions" breadcrumb and Save/Cancel actions
+    await waitFor(() => expect(screen.getByRole("button", { name: /save changes/i })).toBeInTheDocument());
   });
 
   it("renders S6 User Management on /admin/users", async () => {
