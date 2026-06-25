@@ -5,6 +5,7 @@ import { AccountPage as AccountPageScreen } from "./screens/account-page";
 import { ErrorPage as ErrorPageScreen } from "./screens/error-page";
 import { AdminLayout } from "./screens/admin/admin-layout";
 import { RolesPage } from "./screens/admin/roles-page";
+import { PermissionEditorPage } from "./screens/admin/permission-editor-page";
 
 function PlaceholderPage({
   screenId,
@@ -45,16 +46,8 @@ export function ChatWorkspacePage() {
 // S4 — Admin: Role Management (real implementation)
 export { RolesPage as AdminRolesPage };
 
-// S5 — Admin: Permission Editor
-export function AdminPermissionEditorPage() {
-  return (
-    <PlaceholderPage
-      screenId="S5"
-      title="Permission Editor"
-      note="Admin — Permission Editor for a specific role"
-    />
-  );
-}
+// S5 — Admin: Permission Editor (real implementation)
+export { PermissionEditorPage as AdminPermissionEditorPage };
 
 // S6 — Admin: User Management
 export function AdminUsersPage() {
@@ -110,7 +103,7 @@ export function App() {
         {/* S4 — Role Management */}
         <Route path="roles" element={<RolesPage />} />
         {/* S5 — Permission Editor */}
-        <Route path="roles/:roleId/permissions" element={<AdminPermissionEditorPage />} />
+        <Route path="roles/:roleId/permissions" element={<PermissionEditorPage />} />
         {/* S6 — User Management */}
         <Route path="users" element={<AdminUsersPage />} />
         {/* S7 — Data Sources */}

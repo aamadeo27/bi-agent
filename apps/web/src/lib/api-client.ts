@@ -9,6 +9,8 @@ import type {
   Role,
   User,
   ResourceGrantSet,
+  SchemaTree,
+  DataSource,
 } from "@bi/contracts";
 import { ApiErrorResponseSchema } from "@bi/contracts";
 import { getAccessToken, setAccessToken, clearAccessToken } from "./auth-store";
@@ -208,6 +210,28 @@ export async function deleteRole(id: string): Promise<void> {
 /** GET /api/admin/roles/:id/grants → effective grant set for the role. */
 export async function listRoleGrants(roleId: string): Promise<ResourceGrantSet> {
   return request<ResourceGrantSet>(`/admin/roles/${roleId}/grants`);
+}
+
+/** PUT /api/admin/roles/:id/grants → replace entire grant set for the role (batch save). */
+export async function putRoleGrants(roleId: string, grants: ResourceGrantSet): Promise<void> {
+  return request<void>(`/admin/roles/${roleId}/grants`, {
+    method: "PUT",
+    body: JSON.stringify(grants),
+  });
+}
+
+// ─── Admin: Schema tree ───────────────────────────────────────────────────────
+
+/** GET /api/admin/schema/:dataSourceId → schema tree (schema>table>column) for the permission editor. */
+export async function getSchemaTree(dataSourceId: string): Promise<SchemaTree> {
+  return request<SchemaTree>(`/admin/schema/${encodeURIComponent(dataSourceId)}`);
+}
+
+// ─── Admin: Data Sources ──────────────────────────────────────────────────────
+
+/** GET /api/admin/data-sources → tenant-scoped data source list. */
+export async function listDataSources(): Promise<DataSource[]> {
+  return request<DataSource[]>("/admin/data-sources");
 }
 
 // ─── Admin: Users ─────────────────────────────────────────────────────────────
