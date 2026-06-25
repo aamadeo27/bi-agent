@@ -3,6 +3,8 @@ import { Routes, Route, Navigate, useNavigate } from "react-router-dom";
 import { LoginPage } from "./screens/login-page";
 import { AccountPage as AccountPageScreen } from "./screens/account-page";
 import { ErrorPage as ErrorPageScreen } from "./screens/error-page";
+import { AdminLayout } from "./screens/admin/admin-layout";
+import { RolesPage } from "./screens/admin/roles-page";
 
 function PlaceholderPage({
   screenId,
@@ -40,10 +42,8 @@ export function ChatWorkspacePage() {
   );
 }
 
-// S4 — Admin: Role Management
-export function AdminRolesPage() {
-  return <PlaceholderPage screenId="S4" title="Role Management" note="Admin — Role Management" />;
-}
+// S4 — Admin: Role Management (real implementation)
+export { RolesPage as AdminRolesPage };
 
 // S5 — Admin: Permission Editor
 export function AdminPermissionEditorPage() {
@@ -103,23 +103,21 @@ export function App() {
       <Route path="/chat" element={<ChatWorkspacePage />} />
       <Route path="/chat/:conversationId" element={<ChatWorkspacePage />} />
 
-      {/* Admin section — redirect /admin to roles list */}
-      <Route path="/admin" element={<Navigate to="/admin/roles" replace />} />
-
-      {/* S4 — Role Management */}
-      <Route path="/admin/roles" element={<AdminRolesPage />} />
-
-      {/* S5 — Permission Editor */}
-      <Route path="/admin/roles/:roleId/permissions" element={<AdminPermissionEditorPage />} />
-
-      {/* S6 — User Management */}
-      <Route path="/admin/users" element={<AdminUsersPage />} />
-
-      {/* S7 — Data Sources */}
-      <Route path="/admin/data-sources" element={<AdminDataSourcesPage />} />
-
-      {/* S8 — Audit Log */}
-      <Route path="/admin/audit" element={<AdminAuditLogPage />} />
+      {/* Admin section — layout route with admin guard */}
+      <Route path="/admin" element={<AdminLayout />}>
+        {/* /admin → /admin/roles */}
+        <Route index element={<Navigate to="/admin/roles" replace />} />
+        {/* S4 — Role Management */}
+        <Route path="roles" element={<RolesPage />} />
+        {/* S5 — Permission Editor */}
+        <Route path="roles/:roleId/permissions" element={<AdminPermissionEditorPage />} />
+        {/* S6 — User Management */}
+        <Route path="users" element={<AdminUsersPage />} />
+        {/* S7 — Data Sources */}
+        <Route path="data-sources" element={<AdminDataSourcesPage />} />
+        {/* S8 — Audit Log */}
+        <Route path="audit" element={<AdminAuditLogPage />} />
+      </Route>
 
       {/* S10 — Account / Profile */}
       <Route path="/account" element={<AccountPageScreen />} />

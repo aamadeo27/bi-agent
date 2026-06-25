@@ -651,7 +651,7 @@ describe("MeResponseSchema", () => {
       MeResponseSchema.parse({
         user: baseUser,
         role: baseRole,
-        capabilities: { canInspectQuery: true },
+        capabilities: { canInspectQuery: true, isAdmin: false },
         tenant: baseTenant,
       })
     ).not.toThrow();
@@ -662,7 +662,7 @@ describe("MeResponseSchema", () => {
       MeResponseSchema.parse({
         user: { ...baseUser, authMethods: ["sso"] },
         role: null,
-        capabilities: { canInspectQuery: false },
+        capabilities: { canInspectQuery: false, isAdmin: false },
         tenant: baseTenant,
       })
     ).not.toThrow();
@@ -673,7 +673,7 @@ describe("MeResponseSchema", () => {
       MeResponseSchema.parse({
         user: { ...baseUser, authMethods: ["password", "sso"] },
         role: baseRole,
-        capabilities: { canInspectQuery: false },
+        capabilities: { canInspectQuery: false, isAdmin: false },
         tenant: baseTenant,
       })
     ).not.toThrow();

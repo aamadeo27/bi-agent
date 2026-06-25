@@ -6,6 +6,9 @@ import type {
   ChangePasswordRequest,
   ConversationSummary,
   GeneratedQueryView,
+  Role,
+  User,
+  ResourceGrantSet,
 } from "@bi/contracts";
 import { ApiErrorResponseSchema } from "@bi/contracts";
 import { getAccessToken, setAccessToken, clearAccessToken } from "./auth-store";
@@ -164,4 +167,52 @@ export async function deleteConversation(conversationId: string): Promise<void> 
 /** GET /api/messages/:id/query → generated query view (requires canInspectQuery). */
 export async function getGeneratedQuery(messageId: string): Promise<GeneratedQueryView> {
   return request<GeneratedQueryView>(`/messages/${messageId}/query`);
+}
+
+// ─── Admin: Roles ─────────────────────────────────────────────────────────────
+
+export interface CreateRoleRequest {
+  name: string;
+  description?: string;
+}
+
+export interface UpdateRoleRequest {
+  name?: string;
+  description?: string;
+  capabilities?: { canInspectQuery: boolean };
+}
+
+/** GET /api/admin/roles → tenant-scoped role list. */
+export async function listRoles(): Promise<Role[]> {
+  return request<Role[]>("/admin/roles");
+}
+
+/** POST /api/admin/roles → create a new role. */
+export async function createRole(data: CreateRoleRequest): Promise<Role> {
+  return request<Role>("/admin/roles", { method: "POST", body: JSON.stringify(data) });
+}
+
+/** PATCH /api/admin/roles/:id → update role name/description/capabilities. */
+export async function updateRole(id: string, data: UpdateRoleRequest): Promise<Role> {
+  return request<Role>(`/admin/roles/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
+/** DELETE /api/admin/roles/:id → remove role (server rejects if users still assigned). */
+export async function deleteRole(id: string): Promise<void> {
+  return request<void>(`/admin/roles/${id}`, { method: "DELETE" });
+}
+
+/** GET /api/admin/roles/:id/grants → effective grant set for the role. */
+export async function listRoleGrants(roleId: string): Promise<ResourceGrantSet> {
+  return request<ResourceGrantSet>(`/admin/roles/${roleId}/grants`);
+}
+
+// ─── Admin: Users ─────────────────────────────────────────────────────────────
+
+/** GET /api/admin/users → tenant-scoped user list. */
+export async function listAdminUsers(): Promise<User[]> {
+  return request<User[]>("/admin/users");
 }

@@ -36,7 +36,7 @@ const meWithPassword: MeResponse = {
     authMethods: ["password"],
   },
   role: { id: "role1", name: "Analyst" },
-  capabilities: { canInspectQuery: false },
+  capabilities: { canInspectQuery: false, isAdmin: false },
   tenant: { id: "t1", displayName: "Acme Corp" },
 };
 

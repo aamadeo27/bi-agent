@@ -121,7 +121,7 @@ describe("GET /me", () => {
     expect(res.body.user.displayName).toBe("Alice");
     expect(res.body.user.authMethods).toEqual(["password"]);
     expect(res.body.role).toEqual({ id: "role1", name: "Analyst" });
-    expect(res.body.capabilities).toEqual({ canInspectQuery: false });
+    expect(res.body.capabilities).toEqual({ canInspectQuery: false, isAdmin: false });
     expect(res.body.tenant).toEqual({ id: "tenant1", displayName: "Acme Corp" });
   });
 
@@ -132,7 +132,7 @@ describe("GET /me", () => {
     const res = await request(app).get("/me");
     expect(res.status).toBe(200);
     expect(res.body.role).toBeNull();
-    expect(res.body.capabilities).toEqual({ canInspectQuery: false });
+    expect(res.body.capabilities).toEqual({ canInspectQuery: false, isAdmin: false });
   });
 
   it("returns canInspectQuery: true when role has the capability", async () => {
