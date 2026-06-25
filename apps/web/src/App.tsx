@@ -6,6 +6,7 @@ import { ErrorPage as ErrorPageScreen } from "./screens/error-page";
 import { AdminLayout } from "./screens/admin/admin-layout";
 import { RolesPage } from "./screens/admin/roles-page";
 import { PermissionEditorPage } from "./screens/admin/permission-editor-page";
+import { UsersPage } from "./screens/admin/users-page";
 
 function PlaceholderPage({
   screenId,
@@ -49,10 +50,8 @@ export { RolesPage as AdminRolesPage };
 // S5 — Admin: Permission Editor (real implementation)
 export { PermissionEditorPage as AdminPermissionEditorPage };
 
-// S6 — Admin: User Management
-export function AdminUsersPage() {
-  return <PlaceholderPage screenId="S6" title="User Management" note="Admin — User Management" />;
-}
+// S6 — Admin: User Management (real implementation)
+export { UsersPage as AdminUsersPage };
 
 // S7 — Admin: Data Sources
 export function AdminDataSourcesPage() {
@@ -105,7 +104,7 @@ export function App() {
         {/* S5 — Permission Editor */}
         <Route path="roles/:roleId/permissions" element={<PermissionEditorPage />} />
         {/* S6 — User Management */}
-        <Route path="users" element={<AdminUsersPage />} />
+        <Route path="users" element={<UsersPage />} />
         {/* S7 — Data Sources */}
         <Route path="data-sources" element={<AdminDataSourcesPage />} />
         {/* S8 — Audit Log */}
