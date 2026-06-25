@@ -1,3 +1,2 @@
-// TODO: admin route handlers for roles, users, data-sources, audit
-// See: docs/kb/contracts.md §rbac-model §audit-event
-export {};
+export { rolesRouter } from "./roles-router.js";
+export { requireAdminCapability } from "./require-admin.js";
