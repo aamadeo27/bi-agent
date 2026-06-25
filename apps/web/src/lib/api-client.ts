@@ -240,3 +240,30 @@ export async function listDataSources(): Promise<DataSource[]> {
 export async function listAdminUsers(): Promise<User[]> {
   return request<User[]>("/admin/users");
 }
+
+export interface PatchUserRequest {
+  roleId?: string | null;
+  status?: "active" | "suspended";
+}
+
+/** PATCH /api/admin/users/:id → assign role or suspend/reinstate. */
+export async function patchAdminUser(id: string, data: PatchUserRequest): Promise<User> {
+  return request<User>(`/admin/users/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
+export interface InviteUserPayload {
+  email: string;
+  displayName: string;
+  roleId?: string;
+}
+
+/** POST /api/admin/users/invite → send email invite for a new tenant user. */
+export async function inviteUser(data: InviteUserPayload): Promise<{ userId: string }> {
+  return request<{ userId: string }>("/admin/users/invite", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
