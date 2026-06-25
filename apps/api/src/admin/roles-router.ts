@@ -2,7 +2,7 @@ import { Router } from "express";
 import type { Router as ExpressRouter, Request, Response } from "express";
 import { z } from "zod";
 import type { ApiErrorResponse } from "@bi/contracts";
-import { RoleSchema } from "@bi/contracts";
+import { RoleSchema, ResourceGrantSchema } from "@bi/contracts";
 import { logger } from "../observability/logger.js";
 
 export const rolesRouter: ExpressRouter = Router();
@@ -235,6 +235,131 @@ rolesRouter.delete("/:id", async (req: Request, res: Response) => {
   } catch (err) {
     logger.error(err, "roles DELETE /:id error");
     const body: ApiErrorResponse = { code: "INTERNAL", message: "Failed to delete role" };
+    res.status(500).json(body);
+  }
+});
+
+// ── Grants: GET /api/admin/roles/:id/grants ───────────────────────────────────
+
+interface GrantRow {
+  id: string;
+  role_id: string;
+  data_source_id: string;
+  kind: "schema" | "table" | "column";
+  schema: string;
+  table: string | null;
+  column: string | null;
+}
+
+function mapGrantRow(row: GrantRow): z.infer<typeof ResourceGrantSchema> {
+  return {
+    roleId: row.role_id,
+    dataSourceId: row.data_source_id,
+    kind: row.kind,
+    schema: row.schema,
+    ...(row.table != null ? { table: row.table } : {}),
+    ...(row.column != null ? { column: row.column } : {}),
+  };
+}
+
+const GrantInputSchema = z
+  .object({
+    dataSourceId: z.string().min(1),
+    kind: z.enum(["schema", "table", "column"]),
+    schema: z.string().min(1),
+    table: z.string().min(1).optional(),
+    column: z.string().min(1).optional(),
+  })
+  .superRefine((g, ctx) => {
+    if ((g.kind === "table" || g.kind === "column") && !g.table) {
+      ctx.addIssue({ code: "custom", message: "table is required for kind=table/column" });
+    }
+    if (g.kind === "column" && !g.column) {
+      ctx.addIssue({ code: "custom", message: "column is required for kind=column" });
+    }
+  });
+
+const PutGrantsBodySchema = z.array(GrantInputSchema);
+
+rolesRouter.get("/:id/grants", async (req: Request, res: Response) => {
+  const { id } = req.params;
+  try {
+    const rows = await req.withTenantTx!<GrantRow[]>((tx) =>
+      tx.$queryRawUnsafe<GrantRow[]>(
+        `SELECT id, role_id, data_source_id, kind, schema, "table", "column"
+         FROM resource_grants
+         WHERE role_id = $1
+         ORDER BY data_source_id, kind, schema, "table", "column"`,
+        id,
+      ),
+    );
+    res.json(rows.map(mapGrantRow));
+  } catch (err) {
+    logger.error(err, "grants GET error");
+    const body: ApiErrorResponse = { code: "INTERNAL", message: "Failed to fetch grants" };
+    res.status(500).json(body);
+  }
+});
+
+// ── Grants: PUT /api/admin/roles/:id/grants ───────────────────────────────────
+
+rolesRouter.put("/:id/grants", async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const parsed = PutGrantsBodySchema.safeParse(req.body);
+  if (!parsed.success) {
+    const body: ApiErrorResponse = {
+      code: "VALIDATION",
+      message: parsed.error.issues.map((i) => i.message).join("; "),
+    };
+    res.status(400).json(body);
+    return;
+  }
+
+  const grants = parsed.data;
+
+  try {
+    const result = await req.withTenantTx!(async (tx) => {
+      // Verify role exists (lock to prevent concurrent PUT race)
+      const roles = await tx.$queryRawUnsafe<Array<{ id: string }>>(
+        `SELECT id FROM roles WHERE id = $1 FOR UPDATE`,
+        id,
+      );
+      if (!roles.length) return null;
+
+      // Atomic batch replace: delete existing grants + insert new set
+      await tx.$executeRawUnsafe(`DELETE FROM resource_grants WHERE role_id = $1`, id);
+
+      const inserted: GrantRow[] = [];
+      for (const g of grants) {
+        const grantId = crypto.randomUUID();
+        const rows = await tx.$queryRawUnsafe<GrantRow[]>(
+          `INSERT INTO resource_grants (id, role_id, data_source_id, kind, schema, "table", "column")
+           VALUES ($1, $2, $3, $4, $5, $6, $7)
+           RETURNING id, role_id, data_source_id, kind, schema, "table", "column"`,
+          grantId,
+          id,
+          g.dataSourceId,
+          g.kind,
+          g.schema,
+          g.table ?? null,
+          g.column ?? null,
+        );
+        inserted.push(...rows);
+      }
+
+      return inserted;
+    });
+
+    if (result === null) {
+      const body: ApiErrorResponse = { code: "NOT_FOUND", message: "Role not found" };
+      res.status(404).json(body);
+      return;
+    }
+
+    res.json(result.map(mapGrantRow));
+  } catch (err) {
+    logger.error(err, "grants PUT error");
+    const body: ApiErrorResponse = { code: "INTERNAL", message: "Failed to replace grants" };
     res.status(500).json(body);
   }
 });
