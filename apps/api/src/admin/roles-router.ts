@@ -1,11 +1,11 @@
 import { Router } from "express";
-import type { Request, Response } from "express";
+import type { Router as ExpressRouter, Request, Response } from "express";
 import { z } from "zod";
 import type { ApiErrorResponse } from "@bi/contracts";
 import { RoleSchema } from "@bi/contracts";
 import { logger } from "../observability/logger.js";
 
-export const rolesRouter = Router();
+export const rolesRouter: ExpressRouter = Router();
 
 // ── Request body schemas ──────────────────────────────────────────────────────
 
