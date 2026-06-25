@@ -45,3 +45,29 @@ export const DataSourceSchema = z.object({
   lastTestedAt: z.string().datetime().optional(),
 });
 export type DataSource = z.infer<typeof DataSourceSchema>;
+
+// ── Schema tree (GET /api/admin/schema/:dataSourceId) ─────────────────────────
+
+export const SchemaColumnSchema = z.object({
+  name: z.string(),
+  type: z.string(),
+});
+export type SchemaColumn = z.infer<typeof SchemaColumnSchema>;
+
+export const SchemaTableSchema = z.object({
+  name: z.string(),
+  columns: z.array(SchemaColumnSchema),
+});
+export type SchemaTable = z.infer<typeof SchemaTableSchema>;
+
+export const SchemaSchemaSchema = z.object({
+  name: z.string(),
+  tables: z.array(SchemaTableSchema),
+});
+export type SchemaSchemaObj = z.infer<typeof SchemaSchemaSchema>;
+
+export const SchemaTreeSchema = z.object({
+  dataSourceId: z.string(),
+  schemas: z.array(SchemaSchemaSchema),
+});
+export type SchemaTree = z.infer<typeof SchemaTreeSchema>;

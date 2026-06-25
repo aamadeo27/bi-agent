@@ -1,11 +1,13 @@
 import { Router } from "express";
 import type { Router as ExpressRouter, Request, Response } from "express";
-import { InviteUserRequestSchema } from "@bi/contracts";
+import { z } from "zod";
+import { InviteUserRequestSchema, UserSchema } from "@bi/contracts";
 import type { ApiErrorResponse } from "@bi/contracts";
 import { createInvite } from "../auth/invite-service.js";
 import { consoleMailer } from "../mailer/console-adapter.js";
 import { getPrisma } from "../db/client.js";
 import { logger } from "../observability/logger.js";
+import { requireAdminCapability } from "./require-admin.js";
 
 export const adminUsersRouter: ExpressRouter = Router();
 
@@ -72,6 +74,147 @@ adminUsersRouter.post("/invite", async (req: Request, res: Response) => {
     }
     logger.error(err, "invite error");
     const body: ApiErrorResponse = { code: "INTERNAL", message: "Invite failed" };
+    res.status(500).json(body);
+  }
+});
+
+// ── DB row type ───────────────────────────────────────────────────────────────
+
+interface UserRow {
+  id: string;
+  email: string;
+  display_name: string;
+  status: "invited" | "active" | "suspended";
+  role_id: string | null;
+  auth_methods: Array<"password" | "sso">;
+  created_at: Date;
+}
+
+function mapUserRow(row: UserRow): z.infer<typeof UserSchema> {
+  return {
+    id: row.id,
+    email: row.email,
+    displayName: row.display_name,
+    status: row.status,
+    roleId: row.role_id,
+    authMethods: row.auth_methods,
+    createdAt: row.created_at.toISOString(),
+  };
+}
+
+// ── PATCH request body ────────────────────────────────────────────────────────
+
+const PatchUserBodySchema = z
+  .object({
+    roleId: z.string().nullable().optional(),
+    status: z.enum(["active", "suspended"]).optional(),
+  })
+  .refine((d) => d.roleId !== undefined || d.status !== undefined, {
+    message: "At least one of roleId or status must be provided",
+  });
+
+// ── GET /api/admin/users ──────────────────────────────────────────────────────
+
+adminUsersRouter.get("/", requireAdminCapability, async (req: Request, res: Response) => {
+  try {
+    const rows = await req.withTenantTx!<UserRow[]>((tx) =>
+      tx.$queryRawUnsafe<UserRow[]>(
+        `SELECT id, email, display_name, status, role_id, auth_methods, created_at
+         FROM users
+         ORDER BY created_at`,
+      ),
+    );
+    res.json(rows.map(mapUserRow));
+  } catch (err) {
+    logger.error(err, "users GET / error");
+    const body: ApiErrorResponse = { code: "INTERNAL", message: "Failed to list users" };
+    res.status(500).json(body);
+  }
+});
+
+// ── GET /api/admin/users/:id ──────────────────────────────────────────────────
+
+adminUsersRouter.get("/:id", requireAdminCapability, async (req: Request, res: Response) => {
+  const { id } = req.params;
+  try {
+    const rows = await req.withTenantTx!<UserRow[]>((tx) =>
+      tx.$queryRawUnsafe<UserRow[]>(
+        `SELECT id, email, display_name, status, role_id, auth_methods, created_at
+         FROM users
+         WHERE id = $1`,
+        id,
+      ),
+    );
+    if (!rows.length) {
+      const body: ApiErrorResponse = { code: "NOT_FOUND", message: "User not found" };
+      res.status(404).json(body);
+      return;
+    }
+    res.json(mapUserRow(rows[0]));
+  } catch (err) {
+    logger.error(err, "users GET /:id error");
+    const body: ApiErrorResponse = { code: "INTERNAL", message: "Failed to fetch user" };
+    res.status(500).json(body);
+  }
+});
+
+// ── PATCH /api/admin/users/:id ────────────────────────────────────────────────
+
+adminUsersRouter.patch("/:id", requireAdminCapability, async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const parsed = PatchUserBodySchema.safeParse(req.body);
+  if (!parsed.success) {
+    const body: ApiErrorResponse = {
+      code: "VALIDATION",
+      message: parsed.error.issues.map((i) => i.message).join("; "),
+    };
+    res.status(400).json(body);
+    return;
+  }
+
+  const { roleId, status } = parsed.data;
+
+  try {
+    // Step 1: update tenant-schema users row atomically (SELECT FOR UPDATE → UPDATE)
+    const updated = await req.withTenantTx!<UserRow[] | null>(async (tx) => {
+      const current = await tx.$queryRawUnsafe<UserRow[]>(
+        `SELECT id, email, display_name, status, role_id, auth_methods, created_at
+         FROM users WHERE id = $1 FOR UPDATE`,
+        id,
+      );
+      if (!current.length) return null;
+
+      const newRoleId = roleId !== undefined ? roleId : current[0].role_id;
+      const newStatus = status !== undefined ? status : current[0].status;
+
+      return tx.$queryRawUnsafe<UserRow[]>(
+        `UPDATE users
+         SET role_id = $2, status = $3, updated_at = NOW()
+         WHERE id = $1
+         RETURNING id, email, display_name, status, role_id, auth_methods, created_at`,
+        id,
+        newRoleId,
+        newStatus,
+      );
+    });
+
+    if (!updated || !updated.length) {
+      const body: ApiErrorResponse = { code: "NOT_FOUND", message: "User not found" };
+      res.status(404).json(body);
+      return;
+    }
+
+    // Step 2: sync platform.users so GAP-17 token refresh picks up the new roleId/status.
+    // This is the source read by auth-service.ts refresh() when rotating tokens.
+    const platformData: { roleId?: string | null; status?: "active" | "suspended" } = {};
+    if (roleId !== undefined) platformData.roleId = roleId;
+    if (status !== undefined) platformData.status = status;
+    await getPrisma().user.update({ where: { id: id as string }, data: platformData });
+
+    res.json(mapUserRow(updated[0]));
+  } catch (err) {
+    logger.error(err, "users PATCH /:id error");
+    const body: ApiErrorResponse = { code: "INTERNAL", message: "Failed to update user" };
     res.status(500).json(body);
   }
 });
