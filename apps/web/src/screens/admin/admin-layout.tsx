@@ -1,4 +1,3 @@
-import React from "react";
 import { Navigate, Outlet } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { getMe } from "../../lib/api-client";

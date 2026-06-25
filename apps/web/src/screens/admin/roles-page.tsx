@@ -45,7 +45,7 @@ function CreateRoleModal({ open, onOpenChange, onSuccess }: CreateRoleModalProps
   const nameRef = useRef<HTMLInputElement>(null);
 
   const mutation = useMutation({
-    mutationFn: () => createRole({ name: name.trim(), description: description.trim() || undefined }),
+    mutationFn: () => createRole({ name: name.trim(), ...(description.trim() ? { description: description.trim() } : {}) }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["roles"] });
       onSuccess(`Role "${name.trim()}" created.`);
@@ -183,7 +183,7 @@ function EditRoleModal({ role, onClose, onSuccess }: EditRoleModalProps) {
     mutationFn: () =>
       updateRole(role!.id, {
         name: name.trim(),
-        description: description.trim() || undefined,
+        ...(description.trim() ? { description: description.trim() } : {}),
         capabilities: { canInspectQuery },
       }),
     onSuccess: () => {
