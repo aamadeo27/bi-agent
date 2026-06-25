@@ -209,7 +209,7 @@ adminUsersRouter.patch("/:id", requireAdminCapability, async (req: Request, res:
     const platformData: { roleId?: string | null; status?: "active" | "suspended" } = {};
     if (roleId !== undefined) platformData.roleId = roleId;
     if (status !== undefined) platformData.status = status;
-    await getPrisma().user.update({ where: { id }, data: platformData });
+    await getPrisma().user.update({ where: { id: id as string }, data: platformData });
 
     res.json(mapUserRow(updated[0]));
   } catch (err) {
