@@ -7,6 +7,7 @@ import { AdminLayout } from "./screens/admin/admin-layout";
 import { RolesPage } from "./screens/admin/roles-page";
 import { PermissionEditorPage } from "./screens/admin/permission-editor-page";
 import { UsersPage } from "./screens/admin/users-page";
+import { DataSourcesPage } from "./screens/admin/data-sources-page";
 
 function PlaceholderPage({
   screenId,
@@ -53,10 +54,8 @@ export { PermissionEditorPage as AdminPermissionEditorPage };
 // S6 — Admin: User Management (real implementation)
 export { UsersPage as AdminUsersPage };
 
-// S7 — Admin: Data Sources
-export function AdminDataSourcesPage() {
-  return <PlaceholderPage screenId="S7" title="Data Sources" note="Admin — Data Sources" />;
-}
+// S7 — Admin: Data Sources (real implementation)
+export { DataSourcesPage as AdminDataSourcesPage };
 
 // S8 — Admin: Audit Log (P1)
 export function AdminAuditLogPage() {
@@ -106,7 +105,7 @@ export function App() {
         {/* S6 — User Management */}
         <Route path="users" element={<UsersPage />} />
         {/* S7 — Data Sources */}
-        <Route path="data-sources" element={<AdminDataSourcesPage />} />
+        <Route path="data-sources" element={<DataSourcesPage />} />
         {/* S8 — Audit Log */}
         <Route path="audit" element={<AdminAuditLogPage />} />
       </Route>
