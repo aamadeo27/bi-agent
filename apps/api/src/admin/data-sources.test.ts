@@ -278,7 +278,7 @@ describe("PATCH /api/admin/data-sources/:id", () => {
   it("encrypts connectionConfig on PATCH — never returns it", async () => {
     let callCount = 0;
     const capturedArgs: unknown[][] = [];
-    const app = buildRouterApp(ADMIN_AUTH, (sql, ...args) => {
+    const app = buildRouterApp(ADMIN_AUTH, (_sql, ...args) => {
       capturedArgs.push(args);
       return callCount++ === 0 ? [DS_ROW] : [DS_ROW];
     });

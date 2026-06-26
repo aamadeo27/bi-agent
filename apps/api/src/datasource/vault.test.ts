@@ -131,7 +131,7 @@ describe("setCredential / getCredential / deleteCredential", () => {
   function buildTx(store: Map<string, string>): Prisma.TransactionClient {
     return {
       $executeRawUnsafe: vi.fn().mockImplementation(
-        async (sql: string, _id: string, dsId: string, roleId: string, encrypted: string) => {
+        async (_sql: string, _id: string, dsId: string, roleId: string, encrypted: string) => {
           store.set(`${dsId}:${roleId}`, encrypted);
           return 1;
         },
