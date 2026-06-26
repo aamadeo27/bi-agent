@@ -234,6 +234,59 @@ export async function listDataSources(): Promise<DataSource[]> {
   return request<DataSource[]>("/admin/data-sources");
 }
 
+export interface DataSourcePayload {
+  name: string;
+  type: "postgres" | "mysql" | "bigquery" | "rest";
+  // postgres / mysql fields
+  host?: string;
+  port?: number;
+  database?: string;
+  username?: string;
+  password?: string;
+  // bigquery fields
+  projectId?: string;
+  dataset?: string;
+  serviceAccountJson?: string;
+  // rest fields
+  baseUrl?: string;
+  apiKey?: string;
+}
+
+export interface TestDataSourceResult {
+  ok: boolean;
+  error?: string;
+  testedAt: string;
+}
+
+/** POST /api/admin/data-sources → create a new data source. */
+export async function createDataSource(data: DataSourcePayload): Promise<DataSource> {
+  return request<DataSource>("/admin/data-sources", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+/** PATCH /api/admin/data-sources/:id → update name, type, or connection fields. */
+export async function updateDataSource(
+  id: string,
+  data: Partial<DataSourcePayload>,
+): Promise<DataSource> {
+  return request<DataSource>(`/admin/data-sources/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
+/** DELETE /api/admin/data-sources/:id → remove a data source. */
+export async function deleteDataSource(id: string): Promise<void> {
+  return request<void>(`/admin/data-sources/${id}`, { method: "DELETE" });
+}
+
+/** POST /api/admin/data-sources/:id/test → run connectivity check and return result. */
+export async function testDataSource(id: string): Promise<TestDataSourceResult> {
+  return request<TestDataSourceResult>(`/admin/data-sources/${id}/test`, { method: "POST" });
+}
+
 // ─── Admin: Users ─────────────────────────────────────────────────────────────
 
 /** GET /api/admin/users → tenant-scoped user list. */
