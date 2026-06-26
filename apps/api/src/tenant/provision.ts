@@ -121,6 +121,11 @@ export async function provisionTenant(
             FOREIGN KEY ("role_id") REFERENCES "${s}"."roles"("id") ON DELETE CASCADE
         )
       `);
+      // Unique constraint: only one encrypted credential per (data_source, role) pair.
+      await tx.$executeRawUnsafe(
+        `CREATE UNIQUE INDEX IF NOT EXISTS "cred_vault_refs_ds_role_key"
+         ON "${s}"."cred_vault_refs"("data_source_id", "role_id")`
+      );
 
       // Conversations
       await tx.$executeRawUnsafe(`

@@ -9,7 +9,7 @@ import { tenantScopeMiddleware } from "./middleware/tenant-scope.js";
 import { meRouter } from "./me/index.js";
 import { authRouter } from "./auth/router.js";
 import { adminUsersRouter } from "./admin/users-router.js";
-import { rolesRouter, requireAdminCapability, schemaRouter } from "./admin/index.js";
+import { rolesRouter, requireAdminCapability, schemaRouter, dataSourcesRouter } from "./admin/index.js";
 
 // Initialize the dev-only error-tracking sink. No-ops gracefully when
 // SENTRY_DSN is unset (the default in dev/bootstrap) — see error-sink.ts.
@@ -42,6 +42,7 @@ protectedRouter.use("/me", meRouter);
 protectedRouter.use("/admin/users", adminUsersRouter);
 protectedRouter.use("/admin/roles", requireAdminCapability, rolesRouter);
 protectedRouter.use("/admin/schema", requireAdminCapability, schemaRouter);
+protectedRouter.use("/admin/data-sources", requireAdminCapability, dataSourcesRouter);
 
 app.use("/api", protectedRouter);
 
