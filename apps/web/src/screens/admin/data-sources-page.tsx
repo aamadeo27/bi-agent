@@ -69,7 +69,6 @@ interface CredentialFieldProps {
   onChange: (v: string) => void;
   placeholder?: string | undefined;
   disabled?: boolean | undefined;
-  rows?: number | undefined;
 }
 
 function CredentialField({
@@ -79,7 +78,6 @@ function CredentialField({
   onChange,
   placeholder,
   disabled,
-  rows,
 }: CredentialFieldProps) {
   const [revealed, setRevealed] = useState(false);
 
@@ -94,29 +92,17 @@ function CredentialField({
         {label}
       </label>
       <div className="relative">
-        {rows ? (
-          <textarea
-            id={id}
-            value={value}
-            onChange={(e) => onChange(e.target.value)}
-            placeholder={placeholder}
-            disabled={disabled}
-            rows={rows}
-            className={inputClass + " pr-16 font-mono text-body-sm"}
-            style={revealed ? {} : { WebkitTextSecurity: "disc" } as React.CSSProperties}
-          />
-        ) : (
-          <input
-            id={id}
-            type={revealed ? "text" : "password"}
-            value={value}
-            onChange={(e) => onChange(e.target.value)}
-            placeholder={placeholder}
-            disabled={disabled}
-            autoComplete="new-password"
-            className={inputClass + " pr-16"}
-          />
-        )}
+        {/* Always type="password" for cross-browser masking (WebkitTextSecurity is WebKit-only). */}
+        <input
+          id={id}
+          type={revealed ? "text" : "password"}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          disabled={disabled}
+          autoComplete="new-password"
+          className={inputClass + " pr-16"}
+        />
         <button
           type="button"
           onClick={() => setRevealed((r) => !r)}
@@ -249,7 +235,6 @@ function ConnectionFields({ type, form, setForm, isEdit, disabled }: ConnectionF
             isEdit ? "Leave blank to keep existing" : '{"type":"service_account","project_id":"…"}'
           }
           disabled={disabled}
-          rows={4}
         />
       </>
     );
@@ -280,40 +265,25 @@ function buildPayload(
   name: string,
   type: DataSource["type"],
   form: ConnectionForm,
-): DataSourcePayload | Partial<DataSourcePayload> {
-  const base = { name: name.trim(), type };
+): DataSourcePayload {
+  const result: DataSourcePayload = { name: name.trim(), type };
 
   if (type === "postgres" || type === "mysql") {
-    return {
-      ...base,
-      ...(form.host.trim() ? { host: form.host.trim() } : {}),
-      ...(form.port.trim() ? { port: parseInt(form.port, 10) } : {}),
-      ...(form.database.trim() ? { database: form.database.trim() } : {}),
-      ...(form.username.trim() ? { username: form.username.trim() } : {}),
-      ...(form.password ? { password: form.password } : {}),
-    } as unknown as DataSourcePayload;
+    if (form.host.trim()) result.host = form.host.trim();
+    if (form.port.trim()) result.port = parseInt(form.port, 10);
+    if (form.database.trim()) result.database = form.database.trim();
+    if (form.username.trim()) result.username = form.username.trim();
+    if (form.password) result.password = form.password;
+  } else if (type === "bigquery") {
+    if (form.projectId.trim()) result.projectId = form.projectId.trim();
+    if (form.dataset.trim()) result.dataset = form.dataset.trim();
+    if (form.serviceAccountJson.trim()) result.serviceAccountJson = form.serviceAccountJson.trim();
+  } else if (type === "rest") {
+    if (form.baseUrl.trim()) result.baseUrl = form.baseUrl.trim();
+    if (form.apiKey) result.apiKey = form.apiKey;
   }
 
-  if (type === "bigquery") {
-    return {
-      ...base,
-      ...(form.projectId.trim() ? { projectId: form.projectId.trim() } : {}),
-      ...(form.dataset.trim() ? { dataset: form.dataset.trim() } : {}),
-      ...(form.serviceAccountJson.trim()
-        ? { serviceAccountJson: form.serviceAccountJson.trim() }
-        : {}),
-    } as DataSourcePayload;
-  }
-
-  if (type === "rest") {
-    return {
-      ...base,
-      ...(form.baseUrl.trim() ? { baseUrl: form.baseUrl.trim() } : {}),
-      ...(form.apiKey ? { apiKey: form.apiKey } : {}),
-    } as DataSourcePayload;
-  }
-
-  return base as DataSourcePayload;
+  return result;
 }
 
 // ─── Test result display ───────────────────────────────────────────────────────
@@ -617,10 +587,10 @@ function DeleteDataSourceModal({ target, onClose, onSuccess }: DeleteModalProps)
   const qc = useQueryClient();
 
   const mutation = useMutation({
-    mutationFn: () => deleteDataSource(target!.id),
+    mutationFn: (id: string) => deleteDataSource(id),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["dataSources"] });
-      onSuccess(`"${target!.name}" deleted.`);
+      onSuccess(`"${target?.name ?? "Data source"}" deleted.`);
       onClose();
     },
   });
@@ -674,7 +644,7 @@ function DeleteDataSourceModal({ target, onClose, onSuccess }: DeleteModalProps)
             </Dialog.Close>
             <button
               type="button"
-              onClick={() => mutation.mutate()}
+              onClick={() => { if (target) mutation.mutate(target.id); }}
               disabled={mutation.isPending}
               aria-disabled={mutation.isPending}
               className={
@@ -697,36 +667,33 @@ function DeleteDataSourceModal({ target, onClose, onSuccess }: DeleteModalProps)
 
 interface RetestButtonProps {
   ds: DataSource;
-  onSuccess: (msg: string) => void;
+  /** Called with a toast message on both success and failure outcomes. */
+  onMessage: (msg: string) => void;
 }
 
-function RetestButton({ ds, onSuccess }: RetestButtonProps) {
+function RetestButton({ ds, onMessage }: RetestButtonProps) {
   const qc = useQueryClient();
-  const [testing, setTesting] = useState(false);
 
-  async function handleRetest() {
-    if (testing) return;
-    setTesting(true);
-    try {
-      const result = await testDataSource(ds.id);
+  const mutation = useMutation({
+    mutationFn: () => testDataSource(ds.id),
+    onSuccess: (result) => {
       void qc.invalidateQueries({ queryKey: ["dataSources"] });
-      onSuccess(
+      onMessage(
         result.ok
           ? `"${ds.name}" connected successfully.`
           : `"${ds.name}" test failed: ${result.error ?? "unknown error"}`,
       );
-    } catch (err) {
-      onSuccess(`"${ds.name}" test error: ${apiErrorMessage(err)}`);
-    } finally {
-      setTesting(false);
-    }
-  }
+    },
+    onError: (err) => {
+      onMessage(`"${ds.name}" test error: ${apiErrorMessage(err)}`);
+    },
+  });
 
   return (
     <button
       type="button"
-      onClick={() => void handleRetest()}
-      disabled={testing}
+      onClick={() => mutation.mutate()}
+      disabled={mutation.isPending}
       aria-label={`Re-test connection for ${ds.name}`}
       className={
         "rounded px-2 py-1 text-body-sm font-medium text-neutral-600 " +
@@ -735,7 +702,7 @@ function RetestButton({ ds, onSuccess }: RetestButtonProps) {
         "disabled:cursor-not-allowed disabled:opacity-50"
       }
     >
-      {testing ? "Testing…" : "Re-test"}
+      {mutation.isPending ? "Testing…" : "Re-test"}
     </button>
   );
 }
@@ -796,7 +763,7 @@ function DataSourceCard({ ds, onEdit, onDelete, onRetest }: DataSourceCardProps)
         >
           Edit
         </button>
-        <RetestButton ds={ds} onSuccess={onRetest} />
+        <RetestButton ds={ds} onMessage={onRetest} />
         <button
           type="button"
           onClick={() => onDelete(ds)}
