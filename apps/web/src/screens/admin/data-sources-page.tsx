@@ -370,8 +370,7 @@ function DataSourceModal({ target, onClose, onSuccess }: DataSourceModalProps) {
       setForm(emptyConnectionForm());
       setTestState({ status: "idle" });
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [target]);
+  }, [target]); // intentionally excludes existing/isEdit: effect re-syncs only when target identity changes
 
   const saveMutation = useMutation({
     mutationFn: () => {
