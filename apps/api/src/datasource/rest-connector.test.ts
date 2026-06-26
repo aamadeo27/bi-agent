@@ -103,10 +103,14 @@ describe("testConnection", () => {
 
   it("throws ConnectorDataSourceError on timeout", async () => {
     mockRequest.mockRejectedValueOnce(new Error("body timeout"));
-    const err = await makeConnector()
-      .testConnection()
-      .catch((e) => e as ConnectorDataSourceError);
-    expect(err).toBeInstanceOf(ConnectorDataSourceError);
+    let caught: unknown;
+    try {
+      await makeConnector().testConnection();
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(ConnectorDataSourceError);
+    const err = caught as ConnectorDataSourceError;
     expect(err.code).toBe("DATA_SOURCE");
     expect(err.message).toMatch(/body timeout/);
   });
