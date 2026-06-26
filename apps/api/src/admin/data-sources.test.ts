@@ -196,11 +196,9 @@ describe("POST /api/admin/data-sources", () => {
   });
 
   it("accepts and encrypts connectionConfig (write-only)", async () => {
-    let capturedSql = "";
     let capturedArgs: unknown[] = [];
 
-    const app = buildRouterApp(ADMIN_AUTH, (sql, ...args) => {
-      capturedSql = sql;
+    const app = buildRouterApp(ADMIN_AUTH, (_sql, ...args) => {
       capturedArgs = args;
       return [DS_ROW];
     });
