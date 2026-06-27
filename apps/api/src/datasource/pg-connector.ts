@@ -14,11 +14,10 @@ import type { Connector, QueryResult, QueryColumn } from "./connector.js";
 import { ConnectorDataSourceError } from "./rest-connector.js";
 import {
   type SqlQuery,
-  inferSqlType,
   inferRole,
   normalizeValue,
   mapPgType,
-  firstNonNullValue,
+  mapPgOid,
 } from "./sql-shared.js";
 
 export type { SqlQuery };
@@ -183,10 +182,10 @@ export class PgConnector implements Connector<SqlQuery> {
       const truncated = fetched > cap;
       const cappedRows = truncated ? res.rows.slice(0, cap) : res.rows;
 
-      // Infer column type from first non-null value across all capped rows to
-      // avoid misclassifying nullable columns whose first row happens to be NULL.
+      // Use the pg field OID for reliable type mapping — pg returns NUMERIC
+      // columns as strings, so value-based inference would misclassify them.
       const columns: QueryColumn[] = res.fields.map((f) => {
-        const type = inferSqlType(firstNonNullValue(cappedRows, f.name));
+        const type = mapPgOid(f.dataTypeID);
         return { name: f.name, type, role: inferRole(type) };
       });
 

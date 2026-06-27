@@ -14,11 +14,10 @@ import type { Connector, QueryResult, QueryColumn } from "./connector.js";
 import { ConnectorDataSourceError } from "./rest-connector.js";
 import {
   type SqlQuery,
-  inferSqlType,
   inferRole,
   normalizeValue,
   mapMysqlType,
-  firstNonNullValue,
+  mapMysqlFieldType,
 } from "./sql-shared.js";
 
 export type { SqlQuery };
@@ -103,8 +102,13 @@ export class MysqlConnector implements Connector<SqlQuery> {
       );
     }
     try {
+      // Explicit lowercase aliases force consistent casing on all platforms;
+      // information_schema column names are uppercase on Linux MySQL 8.
       const [rows] = await conn.query<RowDataPacket[]>(
-        `SELECT table_schema, table_name, column_name, column_type
+        `SELECT table_schema AS tbl_schema,
+                table_name    AS tbl_name,
+                column_name   AS col_name,
+                column_type   AS col_type
          FROM information_schema.columns
          WHERE table_schema = DATABASE()
          ORDER BY table_name, ordinal_position`,
@@ -114,14 +118,14 @@ export class MysqlConnector implements Connector<SqlQuery> {
         return { dataSourceId, schemas: [] };
       }
 
-      const schemaName = rows[0]!["table_schema"] as string;
+      const schemaName = rows[0]!["tbl_schema"] as string;
       const tableMap = new Map<string, { name: string; type: string }[]>();
       for (const row of rows) {
-        const tname = row["table_name"] as string;
+        const tname = row["tbl_name"] as string;
         if (!tableMap.has(tname)) tableMap.set(tname, []);
         tableMap.get(tname)!.push({
-          name: row["column_name"] as string,
-          type: mapMysqlType(row["column_type"] as string),
+          name: row["col_name"] as string,
+          type: mapMysqlType(row["col_type"] as string),
         });
       }
 
@@ -178,11 +182,13 @@ export class MysqlConnector implements Connector<SqlQuery> {
       const truncated = fetched > cap;
       const cappedRows = truncated ? rows.slice(0, cap) : rows;
 
-      // Infer column type from first non-null value across all capped rows to
-      // avoid misclassifying nullable columns whose first row happens to be NULL.
+      // Use mysql2 field type number for reliable mapping — mysql2 returns
+      // DECIMAL columns as strings, so value-based inference would misclassify them.
       const columns: QueryColumn[] = (fields as FieldPacket[]).map((f) => {
         const colName = f.name ?? "";
-        const type = inferSqlType(firstNonNullValue(cappedRows, colName));
+        // f.type is undefined for synthetic columns (e.g. computed expressions);
+        // 253 = VAR_STRING is the safe fallback → "string".
+        const type = mapMysqlFieldType(f.type ?? 253);
         return { name: colName, type, role: inferRole(type) };
       });
 

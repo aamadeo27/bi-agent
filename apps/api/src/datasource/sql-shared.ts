@@ -74,6 +74,43 @@ export function firstNonNullValue(
   return null;
 }
 
+// ── Driver-native type mappers (for query result columns) ─────────────────────
+//
+// Value-based inferSqlType() fails for numeric types because:
+//   • `pg` returns NUMERIC/DECIMAL as JS strings (precision preservation)
+//   • `mysql2` returns DECIMAL/NEWDECIMAL as JS strings
+// Use the DB's own type metadata instead.
+
+// PostgreSQL OID → ColumnType (OIDs from pg_type catalog)
+const PG_INTEGER_OIDS = new Set([20, 21, 23, 26]); // int8, int2, int4, oid
+const PG_NUMBER_OIDS = new Set([700, 701, 1700]); // float4, float8, numeric/decimal
+const PG_BOOLEAN_OIDS = new Set([16]);
+const PG_DATE_OIDS = new Set([1082]);
+const PG_DATETIME_OIDS = new Set([1114, 1184, 1266]); // timestamp, timestamptz, timetz
+
+export function mapPgOid(oid: number): ColumnType {
+  if (PG_INTEGER_OIDS.has(oid)) return "integer";
+  if (PG_NUMBER_OIDS.has(oid)) return "number";
+  if (PG_BOOLEAN_OIDS.has(oid)) return "boolean";
+  if (PG_DATE_OIDS.has(oid)) return "date";
+  if (PG_DATETIME_OIDS.has(oid)) return "datetime";
+  return "string";
+}
+
+// MySQL column type numbers (matches mysql2 Types / COM_FIELD_LIST type codes)
+const MYSQL_INTEGER_TYPES = new Set([1, 2, 3, 8, 9]); // TINY, SHORT, LONG, LONGLONG, INT24
+const MYSQL_NUMBER_TYPES = new Set([0, 4, 5, 246]); // DECIMAL, FLOAT, DOUBLE, NEWDECIMAL
+const MYSQL_DATE_TYPE = 10;
+const MYSQL_DATETIME_TYPES = new Set([7, 12]); // TIMESTAMP, DATETIME
+
+export function mapMysqlFieldType(columnType: number): ColumnType {
+  if (MYSQL_NUMBER_TYPES.has(columnType)) return "number";
+  if (MYSQL_INTEGER_TYPES.has(columnType)) return "integer";
+  if (columnType === MYSQL_DATE_TYPE) return "date";
+  if (MYSQL_DATETIME_TYPES.has(columnType)) return "datetime";
+  return "string";
+}
+
 // ── DB-specific type string → ColumnType mappers (for introspection) ──────────
 //
 // `information_schema.columns.data_type` returns canonical SQL type names
