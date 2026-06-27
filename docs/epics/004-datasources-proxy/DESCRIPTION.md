@@ -25,7 +25,12 @@ Wave 2 (parallel): T4.2, T4.3
 Wave 3 (serial): T4.4
 
 - T4.1 (registry + vault) and T4.5 (S7 UI) start in parallel.
-- T4.2 (SQL connectors pg/mysql/bq) and T4.3 (REST connector) parallel — distinct files.
+- T4.2 (SQL connectors pg/mysql/bq) and T4.3 (REST connector) parallel. Both **implement a
+  pre-defined `Connector` contract** (`datasource-connector`, frozen by T4.3 in
+  `apps/api/src/datasource/connector.ts`) — neither redefines the interface. T4.2 only adds
+  adapter source files and **appends** its barrel exports to
+  `apps/api/src/datasource/index.ts`, so the files are genuinely distinct (no shared-interface
+  merge conflict).
 - T4.4 (Query Proxy + restricted-credential resolution) depends on T01–T4.3 (it wires
   vault + connectors + grant-scoped credential) — serialize last.
 

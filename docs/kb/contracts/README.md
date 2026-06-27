@@ -17,3 +17,4 @@ Item anchors match `kb-refs` (`contracts: [chat-api, rbac-model, ...]`).
 - [audit-event](audit-event.md) — Persisted (GAP-9 confirmed). Powers Admin Audit Log (S8) and security review.
 - [auth-api](auth-api.md) — - `POST /api/auth/login` → `{ accessToken }` + sets refresh cookie (httpOnly).
 - [error-codes](error-codes.md) — Discriminated union shared FE/BE:
+- [datasource-connector](datasource-connector.md) — `Connector<Q>` interface every data-source adapter implements (SQL T4.2, REST T4.3). Owns the interface.
