@@ -129,6 +129,59 @@ function normalizeValue(val: unknown): string | number | null {
   return JSON.stringify(val);
 }
 
+// ── SSRF guard ─────────────────────────────────────────────────────────────────
+
+/**
+ * Blocked host patterns — cloud metadata endpoints, loopback, link-local,
+ * and RFC-1918 private ranges.
+ *
+ * CWE-918: admin-supplied baseUrl must be validated before any network call.
+ */
+const BLOCKED_HOST_PATTERNS: RegExp[] = [
+  // Cloud metadata (AWS/GCP/Azure/OpenStack/DigitalOcean)
+  /^169\.254\./,
+  // IPv6 link-local
+  /^\[?fe80:/i,
+  // Loopback
+  /^localhost$/i,
+  /^127\./,
+  /^\[?::1\]?$/,
+  // RFC-1918 private
+  /^10\./,
+  /^172\.(1[6-9]|2\d|3[01])\./,
+  /^192\.168\./,
+  // Internal hostnames (no dots, e.g. "postgres", "redis")
+  /^[^.]+$/,
+];
+
+/**
+ * Throws ConnectorValidationError if `rawUrl` targets a forbidden scheme or host.
+ * Must be called before any network request on admin-supplied URLs.
+ */
+function validateBaseUrl(rawUrl: string): void {
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    throw new ConnectorValidationError(`Invalid baseUrl: ${rawUrl}`);
+  }
+
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new ConnectorValidationError(
+      `baseUrl must use http or https (got ${parsed.protocol})`,
+    );
+  }
+
+  const host = parsed.hostname.toLowerCase();
+  for (const pattern of BLOCKED_HOST_PATTERNS) {
+    if (pattern.test(host)) {
+      throw new ConnectorValidationError(
+        `baseUrl targets a disallowed host: ${host}`,
+      );
+    }
+  }
+}
+
 // ── RestConnector ──────────────────────────────────────────────────────────────
 
 export class RestConnector implements Connector<RestQuery> {
@@ -140,6 +193,8 @@ export class RestConnector implements Connector<RestQuery> {
     private readonly cred: RestCredential,
     opts: RestConnectorOptions = {},
   ) {
+    // Validate at construction time — block SSRF before any request is issued.
+    validateBaseUrl(cred.baseUrl);
     this.timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.maxRows = opts.maxRows ?? DEFAULT_MAX_ROWS;
     this.maxResponseBytes = opts.maxResponseBytes ?? DEFAULT_MAX_BYTES;

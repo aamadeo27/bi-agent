@@ -165,6 +165,17 @@ export async function execute(args: ProxyArgs): Promise<QueryResult> {
   let entry = _cache.get(key);
 
   if (!entry || entry.credHash !== hash) {
+    // Drain the old pool before replacing — prevents orphaned connections on
+    // credential rotation (CWE: resource exhaustion across tenants).
+    // Wrapped in try/catch because endFn() may throw synchronously if the
+    // underlying driver is already closed or the mock has no end() method.
+    if (entry?.endFn) {
+      try {
+        void entry.endFn().catch(() => undefined);
+      } catch {
+        // suppress — drain failures must never block query execution
+      }
+    }
     // Decrypt in memory. `cred` must never be logged or returned to callers.
     const cred = decryptCredential(encryptedCred);
     const { queryFn, endFn } = _buildConnectorEntry(type, cred);

@@ -51,15 +51,17 @@ vi.mock("./vault.js", () => ({
 // ── Mock: connectors ───────────────────────────────────────────────────────────
 
 const mockPgQuery = vi.fn().mockResolvedValue(STUB_RESULT);
+const mockPgEnd = vi.fn().mockResolvedValue(undefined);
 const mockMysqlQuery = vi.fn().mockResolvedValue(STUB_RESULT);
+const mockMysqlEnd = vi.fn().mockResolvedValue(undefined);
 const mockBigQueryQuery = vi.fn().mockResolvedValue(STUB_RESULT);
 const mockRestQuery = vi.fn().mockResolvedValue(STUB_RESULT);
 
 vi.mock("./pg-connector.js", () => ({
-  PgConnector: vi.fn().mockImplementation(() => ({ query: mockPgQuery })),
+  PgConnector: vi.fn().mockImplementation(() => ({ query: mockPgQuery, end: mockPgEnd })),
 }));
 vi.mock("./mysql-connector.js", () => ({
-  MysqlConnector: vi.fn().mockImplementation(() => ({ query: mockMysqlQuery })),
+  MysqlConnector: vi.fn().mockImplementation(() => ({ query: mockMysqlQuery, end: mockMysqlEnd })),
 }));
 vi.mock("./bigquery-connector.js", () => ({
   BigQueryConnector: vi
@@ -328,6 +330,53 @@ describe("execute", () => {
   it("ProxyDataSourceNotFoundError carries NOT_FOUND code", async () => {
     const err = new ProxyDataSourceNotFoundError("ds1");
     expect(err.code).toBe("NOT_FOUND");
+  });
+
+  // ── pool drain on credential rotation ────────────────────────────────────────
+
+  it("calls endFn on the evicted pool when the credential hash changes", async () => {
+    // mockPgEnd is the default end() on the pg mock; cleared in beforeEach
+    makeWithTenant("postgres", "enc:cred:v1");
+    await execute({
+      tenantId: "t1",
+      roleId: "r1",
+      dataSourceId: "ds1",
+      query: { kind: "sql", sql: "SELECT 1" },
+    });
+
+    // Rotate credential — old pool must be drained before new one is built
+    makeWithTenant("postgres", "enc:cred:v2");
+    await execute({
+      tenantId: "t1",
+      roleId: "r1",
+      dataSourceId: "ds1",
+      query: { kind: "sql", sql: "SELECT 2" },
+    });
+
+    // endFn is fire-and-forget; flush microtask queue before asserting
+    await Promise.resolve();
+    expect(mockPgEnd).toHaveBeenCalledOnce();
+  });
+
+  it("does NOT call endFn when credential is unchanged (cache hit)", async () => {
+    makeWithTenant("postgres", "enc:cred:stable");
+    await execute({
+      tenantId: "t1",
+      roleId: "r1",
+      dataSourceId: "ds1",
+      query: { kind: "sql", sql: "SELECT 1" },
+    });
+
+    makeWithTenant("postgres", "enc:cred:stable"); // unchanged
+    await execute({
+      tenantId: "t1",
+      roleId: "r1",
+      dataSourceId: "ds1",
+      query: { kind: "sql", sql: "SELECT 2" },
+    });
+
+    await Promise.resolve();
+    expect(mockPgEnd).not.toHaveBeenCalled();
   });
 });
 

@@ -440,3 +440,51 @@ describe("query — auth header", () => {
     expect(opts.headers["Authorization"]).toBe("Bearer test-token-secret");
   });
 });
+
+// ── SSRF guard — CWE-918 ───────────────────────────────────────────────────────
+
+describe("SSRF guard — constructor rejects blocked baseUrls", () => {
+  const BLOCKED: Array<[string, string]> = [
+    ["cloud metadata (AWS/GCP/Azure link-local)", "http://169.254.169.254/latest/meta-data/"],
+    ["loopback hostname", "http://localhost/api"],
+    ["loopback IP 127.0.0.1", "http://127.0.0.1/api"],
+    ["RFC-1918 10.x.x.x", "http://10.0.0.1/api"],
+    ["RFC-1918 172.16.x.x", "http://172.16.0.1/api"],
+    ["RFC-1918 172.31.x.x", "http://172.31.255.255/api"],
+    ["RFC-1918 192.168.x.x", "http://192.168.1.1/api"],
+    ["non-http scheme (ftp)", "ftp://api.example.com/api"],
+    ["non-http scheme (file)", "file:///etc/passwd"],
+    ["internal hostname (no dots)", "http://postgres/api"],
+    ["internal hostname redis", "http://redis/api"],
+  ];
+
+  it.each(BLOCKED)("blocks %s", (_label, url) => {
+    expect(() =>
+      new RestConnector({ ...BASE_CRED, baseUrl: url }, { timeoutMs: 500 }),
+    ).toThrow(ConnectorValidationError);
+  });
+
+  it("allows a well-formed https public URL", () => {
+    expect(() =>
+      new RestConnector(
+        { ...BASE_CRED, baseUrl: "https://api.external.example.com" },
+        { timeoutMs: 500 },
+      ),
+    ).not.toThrow();
+  });
+
+  it("allows a well-formed http public URL", () => {
+    expect(() =>
+      new RestConnector(
+        { ...BASE_CRED, baseUrl: "http://api.external.example.com" },
+        { timeoutMs: 500 },
+      ),
+    ).not.toThrow();
+  });
+
+  it("throws ConnectorValidationError for a completely unparseable URL", () => {
+    expect(() =>
+      new RestConnector({ ...BASE_CRED, baseUrl: "not-a-url" }, { timeoutMs: 500 }),
+    ).toThrow(ConnectorValidationError);
+  });
+});
