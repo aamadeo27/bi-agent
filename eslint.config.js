@@ -5,6 +5,42 @@ import tsPlugin from "@typescript-eslint/eslint-plugin";
 import globals from "globals";
 
 /**
+ * Custom rule: Prisma client must not be imported (non-type) inside the
+ * datasource directory. Raw drivers own the data plane; Prisma is control-plane only.
+ * `import type { Prisma }` is allowed (type-erased, used by vault.ts for tx param).
+ */
+const noPrismaInDatasource = {
+  meta: {
+    type: "problem",
+    docs: {
+      description:
+        "Disallow non-type Prisma imports inside apps/api/src/datasource/ — use raw drivers only (pg/mysql2/@google-cloud/bigquery/undici).",
+    },
+    schema: [],
+    messages: {
+      forbidden:
+        "Prisma must not be imported here. The datasource directory uses raw drivers only. Prisma is control-plane only — importing it here would bypass the least-privilege DB role (L2).",
+    },
+  },
+  create(context) {
+    const filePath = context.filename.replace(/\\/g, "/");
+    if (!filePath.includes("apps/api/src/datasource/")) return {};
+    return {
+      ImportDeclaration(node) {
+        const source = node.source.value;
+        if (
+          typeof source === "string" &&
+          (source === "@prisma/client" || source.startsWith("@prisma/client/")) &&
+          node.importKind !== "type"
+        ) {
+          context.report({ node, messageId: "forbidden" });
+        }
+      },
+    };
+  },
+};
+
+/**
  * Custom rule: LLM provider SDK imports are restricted to the adapters directory.
  * Full enforcement: only @google/genai is blocked outside apps/api/src/llm/adapters/.
  */
@@ -43,7 +79,10 @@ const noLlmSdkOutsideAdapters = {
 };
 
 const localRulesPlugin = {
-  rules: { "no-llm-sdk-outside-adapters": noLlmSdkOutsideAdapters },
+  rules: {
+    "no-llm-sdk-outside-adapters": noLlmSdkOutsideAdapters,
+    "no-prisma-in-datasource": noPrismaInDatasource,
+  },
 };
 
 export default [
@@ -76,6 +115,7 @@ export default [
     rules: {
       ...tsPlugin.configs.recommended.rules,
       "local-rules/no-llm-sdk-outside-adapters": "error",
+      "local-rules/no-prisma-in-datasource": "error",
       "no-console": "warn",
       "@typescript-eslint/no-explicit-any": "error",
       "@typescript-eslint/no-unused-vars": [
