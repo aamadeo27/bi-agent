@@ -29,7 +29,7 @@ vi.mock("../db/with-tenant.js", () => ({
 
 // Import SUT after mock declarations
 import { withTenant } from "../db/with-tenant.js";
-import { execute, _clearConnectorCache, _drainConnectorCache } from "./query-proxy.js";
+import { execute, _drainConnectorCache } from "./query-proxy.js";
 
 const skip = process.env["SKIP_DB_INTEGRATION_TESTS"] === "1";
 
@@ -122,7 +122,7 @@ describe.skipIf(skip)("QueryProxy L2 — least-privilege role (integration)", ()
   // ── Tests ──────────────────────────────────────────────────────────────────────
 
   it("allows SELECT on a granted table (L2 passes)", async () => {
-    _clearConnectorCache();
+    await _drainConnectorCache();
     setupWithTenantMock(encryptedLimitedCred);
 
     const result = await execute({
@@ -141,7 +141,7 @@ describe.skipIf(skip)("QueryProxy L2 — least-privilege role (integration)", ()
   });
 
   it("rejects SELECT on a non-granted table at the source (L2 backstop)", async () => {
-    _clearConnectorCache();
+    await _drainConnectorCache();
     setupWithTenantMock(encryptedLimitedCred);
 
     await expect(
@@ -158,7 +158,7 @@ describe.skipIf(skip)("QueryProxy L2 — least-privilege role (integration)", ()
   });
 
   it("error from restricted-table query does not expose credential fields", async () => {
-    _clearConnectorCache();
+    await _drainConnectorCache();
     setupWithTenantMock(encryptedLimitedCred);
 
     let errorMsg = "";
