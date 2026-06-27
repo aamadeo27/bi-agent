@@ -1,3 +1,13 @@
+// Query Proxy (T4.4) — sole component that executes data-source queries
+export {
+  execute,
+  ProxyCredentialNotFoundError,
+  ProxyDataSourceNotFoundError,
+  _clearConnectorCache,
+  _drainConnectorCache,
+} from "./query-proxy.js";
+export type { ValidatedQuery, ProxyArgs } from "./query-proxy.js";
+
 // Credential vault (T4.1)
 export {
   encryptCredential,
