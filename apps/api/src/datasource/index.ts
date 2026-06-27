@@ -31,3 +31,21 @@ export type {
   RestCredential,
   RestConnectorOptions,
 } from "./rest-connector.js";
+
+// SQL adapters (T4.2)
+export type { SqlQuery } from "./sql-shared.js";
+
+export { PgConnector } from "./pg-connector.js";
+export type { PgCredential, PgConnectorOptions } from "./pg-connector.js";
+
+export { MysqlConnector } from "./mysql-connector.js";
+export type {
+  MysqlCredential,
+  MysqlConnectorOptions,
+} from "./mysql-connector.js";
+
+export { BigQueryConnector } from "./bigquery-connector.js";
+export type {
+  BigQueryCredential,
+  BigQueryConnectorOptions,
+} from "./bigquery-connector.js";
