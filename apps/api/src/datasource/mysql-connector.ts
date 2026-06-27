@@ -18,6 +18,7 @@ import {
   inferRole,
   normalizeValue,
   mapMysqlType,
+  firstNonNullValue,
 } from "./sql-shared.js";
 
 export type { SqlQuery };
@@ -173,14 +174,16 @@ export class MysqlConnector implements Connector<SqlQuery> {
       });
       await conn.query("COMMIT");
 
-      const rowCount = rows.length;
-      const truncated = rowCount > cap;
+      const fetched = rows.length;
+      const truncated = fetched > cap;
       const cappedRows = truncated ? rows.slice(0, cap) : rows;
 
-      const sample = cappedRows[0] ?? {};
+      // Infer column type from first non-null value across all capped rows to
+      // avoid misclassifying nullable columns whose first row happens to be NULL.
       const columns: QueryColumn[] = (fields as FieldPacket[]).map((f) => {
-        const type = inferSqlType(sample[f.name ?? ""]);
-        return { name: f.name ?? "", type, role: inferRole(type) };
+        const colName = f.name ?? "";
+        const type = inferSqlType(firstNonNullValue(cappedRows, colName));
+        return { name: colName, type, role: inferRole(type) };
       });
 
       const normalizedRows = cappedRows.map((row) =>
@@ -189,7 +192,8 @@ export class MysqlConnector implements Connector<SqlQuery> {
         ),
       );
 
-      return { columns, rows: normalizedRows, rowCount, truncated };
+      // rowCount = rows we're returning; truncated=true signals more rows exist.
+      return { columns, rows: normalizedRows, rowCount: cappedRows.length, truncated };
     } catch (err) {
       await conn.query("ROLLBACK").catch(() => {});
       if (err instanceof ConnectorDataSourceError) throw err;

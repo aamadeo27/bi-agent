@@ -143,7 +143,7 @@ describe.skipIf(skip)("MysqlConnector (integration)", () => {
     });
     expect(result.rows.length).toBe(10);
     expect(result.truncated).toBe(true);
-    expect(result.rowCount).toBe(11); // fetched cap+1
+    expect(result.rowCount).toBe(10); // rows returned (truncated=true signals more exist)
   });
 
   it("query with fewer rows than cap sets truncated=false", async () => {

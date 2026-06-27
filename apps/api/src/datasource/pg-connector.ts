@@ -11,16 +11,14 @@ import { Pool } from "pg";
 import type { PoolClient } from "pg";
 import type { SchemaTree } from "@bi/contracts";
 import type { Connector, QueryResult, QueryColumn } from "./connector.js";
-import {
-  ConnectorDataSourceError,
-  ConnectorValidationError,
-} from "./rest-connector.js";
+import { ConnectorDataSourceError } from "./rest-connector.js";
 import {
   type SqlQuery,
   inferSqlType,
   inferRole,
   normalizeValue,
   mapPgType,
+  firstNonNullValue,
 } from "./sql-shared.js";
 
 export type { SqlQuery };
@@ -181,13 +179,14 @@ export class PgConnector implements Connector<SqlQuery> {
       });
       await client.query("COMMIT");
 
-      const rowCount = res.rows.length;
-      const truncated = rowCount > cap;
+      const fetched = res.rows.length;
+      const truncated = fetched > cap;
       const cappedRows = truncated ? res.rows.slice(0, cap) : res.rows;
 
-      const sample = cappedRows[0] ?? {};
+      // Infer column type from first non-null value across all capped rows to
+      // avoid misclassifying nullable columns whose first row happens to be NULL.
       const columns: QueryColumn[] = res.fields.map((f) => {
-        const type = inferSqlType(sample[f.name]);
+        const type = inferSqlType(firstNonNullValue(cappedRows, f.name));
         return { name: f.name, type, role: inferRole(type) };
       });
 
@@ -197,15 +196,11 @@ export class PgConnector implements Connector<SqlQuery> {
         ),
       );
 
-      return { columns, rows, rowCount, truncated };
+      // rowCount = rows we're returning; truncated=true signals more rows exist.
+      return { columns, rows, rowCount: cappedRows.length, truncated };
     } catch (err) {
       await client.query("ROLLBACK").catch(() => {});
-      if (
-        err instanceof ConnectorDataSourceError ||
-        err instanceof ConnectorValidationError
-      ) {
-        throw err;
-      }
+      if (err instanceof ConnectorDataSourceError) throw err;
       throw new ConnectorDataSourceError(
         `Query failed: ${(err as Error).message}`,
       );

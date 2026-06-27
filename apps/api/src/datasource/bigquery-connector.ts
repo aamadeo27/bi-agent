@@ -16,6 +16,7 @@ import {
   inferRole,
   normalizeValue,
   mapBigQueryType,
+  firstNonNullValue,
 } from "./sql-shared.js";
 
 export type { SqlQuery };
@@ -151,15 +152,16 @@ export class BigQueryConnector implements Connector<SqlQuery> {
       );
     }
 
-    const rowCount = rawRows.length;
-    const truncated = rowCount > cap;
+    const fetched = rawRows.length;
+    const truncated = fetched > cap;
     const cappedRows = truncated ? rawRows.slice(0, cap) : rawRows;
 
-    // Infer column types from first row values (BQ returns typed JS objects).
-    const sample = cappedRows[0] ?? {};
-    const colNames = Object.keys(sample);
+    // Derive column names from first row (BQ returns consistent keys).
+    // Infer type from first non-null value across all rows to avoid misclassifying
+    // nullable columns whose first row is NULL.
+    const colNames = Object.keys(cappedRows[0] ?? {});
     const columns: QueryColumn[] = colNames.map((name) => {
-      const type = inferSqlType(sample[name]);
+      const type = inferSqlType(firstNonNullValue(cappedRows, name));
       return { name, type, role: inferRole(type) };
     });
 
@@ -169,6 +171,7 @@ export class BigQueryConnector implements Connector<SqlQuery> {
       ),
     );
 
-    return { columns, rows, rowCount, truncated };
+    // rowCount = rows we're returning; truncated=true signals more rows exist.
+    return { columns, rows, rowCount: cappedRows.length, truncated };
   }
 }

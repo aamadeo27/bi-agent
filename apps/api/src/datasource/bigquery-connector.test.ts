@@ -180,7 +180,7 @@ describe("BigQueryConnector.query", () => {
 
     expect(result.rows.length).toBe(3);
     expect(result.truncated).toBe(true);
-    expect(result.rowCount).toBe(4);
+    expect(result.rowCount).toBe(3); // rows returned (truncated=true signals more exist)
   });
 
   it("sets truncated=false when rows <= cap", async () => {

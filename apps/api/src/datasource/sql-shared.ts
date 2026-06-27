@@ -56,19 +56,50 @@ export function normalizeValue(val: unknown): string | number | null {
   return JSON.stringify(val);
 }
 
-// ── DB-specific type string → ColumnType mappers (for introspection) ──────────
+// ── First non-null value helper (for column type inference from result rows) ───
 
-export function mapPgType(pgDataType: string): string {
+/**
+ * Returns the first non-null/undefined value for `key` across `rows`.
+ * Falls back to `null` when all rows have null/undefined for that key.
+ * Used to avoid misclassifying nullable columns as "string" when row 0 is NULL.
+ */
+export function firstNonNullValue(
+  rows: Record<string, unknown>[],
+  key: string,
+): unknown {
+  for (const row of rows) {
+    const v = row[key];
+    if (v !== null && v !== undefined) return v;
+  }
+  return null;
+}
+
+// ── DB-specific type string → ColumnType mappers (for introspection) ──────────
+//
+// `information_schema.columns.data_type` returns canonical SQL type names
+// (e.g. "integer", "bigint", "timestamp without time zone") — NOT driver
+// shorthand ("int", "int4") or DDL aliases ("serial").
+
+export function mapPgType(pgDataType: string): ColumnType {
   const t = pgDataType.toLowerCase();
-  if (/\bint\b|smallserial|bigserial|\bserial\b/.test(t)) return "integer";
-  if (/float|double precision|real|numeric|decimal/.test(t)) return "number";
-  if (/bool/.test(t)) return "boolean";
-  if (/timestamp/.test(t)) return "datetime";
+  // Exact matches for canonical information_schema names
+  if (t === "integer" || t === "bigint" || t === "smallint") return "integer";
+  if (
+    t === "double precision" ||
+    t === "real" ||
+    t === "numeric" ||
+    t === "decimal" ||
+    t === "money"
+  )
+    return "number";
+  if (t === "boolean") return "boolean";
+  if (t === "timestamp without time zone" || t === "timestamp with time zone")
+    return "datetime";
   if (t === "date") return "date";
   return "string";
 }
 
-export function mapMysqlType(mysqlType: string): string {
+export function mapMysqlType(mysqlType: string): ColumnType {
   const t = mysqlType.toLowerCase();
   // tinyint(1) is MySQL's boolean representation
   if (/^tinyint\(1\)/.test(t)) return "boolean";
@@ -79,16 +110,21 @@ export function mapMysqlType(mysqlType: string): string {
   return "string";
 }
 
-export function mapBigQueryType(bqType: string): string {
+export function mapBigQueryType(bqType: string): ColumnType {
   const t = bqType.toUpperCase();
   if (
     ["INT64", "INTEGER", "INT", "SMALLINT", "TINYINT", "BYTEINT"].includes(t)
   )
     return "integer";
   if (
-    ["FLOAT64", "FLOAT", "NUMERIC", "BIGNUMERIC", "DECIMAL", "BIGDECIMAL"].includes(
-      t,
-    )
+    [
+      "FLOAT64",
+      "FLOAT",
+      "NUMERIC",
+      "BIGNUMERIC",
+      "DECIMAL",
+      "BIGDECIMAL",
+    ].includes(t)
   )
     return "number";
   if (["BOOL", "BOOLEAN"].includes(t)) return "boolean";
