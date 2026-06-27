@@ -29,7 +29,7 @@ vi.mock("../db/with-tenant.js", () => ({
 
 // Import SUT after mock declarations
 import { withTenant } from "../db/with-tenant.js";
-import { execute, _clearConnectorCache } from "./query-proxy.js";
+import { execute, _clearConnectorCache, _drainConnectorCache } from "./query-proxy.js";
 
 const skip = process.env["SKIP_DB_INTEGRATION_TESTS"] === "1";
 
@@ -96,7 +96,10 @@ describe.skipIf(skip)("QueryProxy L2 — least-privilege role (integration)", ()
   }, 120_000);
 
   afterAll(async () => {
-    _clearConnectorCache();
+    // Drain pools BEFORE stopping the container so pg connections close cleanly.
+    // Without this, the container's abrupt shutdown sends 57P01 on open sockets
+    // which pg emits as an error; without a listener it becomes an uncaught exception.
+    await _drainConnectorCache();
     await superPool.end();
     await container.stop();
     delete process.env["VAULT_MASTER_KEY"];

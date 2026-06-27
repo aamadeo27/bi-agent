@@ -59,11 +59,15 @@ export class ProxyDataSourceNotFoundError extends Error {
 // ── Connector cache ────────────────────────────────────────────────────────────
 // Stores the per-connector query function keyed by (tenantId:roleId:dataSourceId).
 // When the stored credential hash changes the entry is replaced (detects rotation).
+// `endFn` drains the underlying connection pool (pg/mysql) on cache eviction or
+// test teardown — prevents uncaught exceptions when test containers stop.
 
 type QueryFn = (q: ValidatedQuery) => Promise<QueryResult>;
+type EndFn = () => Promise<void>;
 
 interface CacheEntry {
   queryFn: QueryFn;
+  endFn: EndFn | undefined;
   credHash: string;
 }
 
@@ -83,26 +87,34 @@ function _hashCred(encryptedCred: string): string {
 
 // ── Connector factory ──────────────────────────────────────────────────────────
 
-function _buildQueryFn(
+interface ConnectorEntry {
+  queryFn: QueryFn;
+  /** Drain the underlying connection pool. Undefined for stateless connectors. */
+  endFn: EndFn | undefined;
+}
+
+function _buildConnectorEntry(
   type: string,
   cred: Record<string, unknown>,
-): QueryFn {
+): ConnectorEntry {
   switch (type) {
     case "postgres": {
       const c = new PgConnector(cred as unknown as PgCredential);
-      return (q) => c.query(q as SqlQuery);
+      return { queryFn: (q) => c.query(q as SqlQuery), endFn: () => c.end() };
     }
     case "mysql": {
       const c = new MysqlConnector(cred as unknown as MysqlCredential);
-      return (q) => c.query(q as SqlQuery);
+      return { queryFn: (q) => c.query(q as SqlQuery), endFn: () => c.end() };
     }
     case "bigquery": {
+      // BigQueryConnector is stateless (no persistent pool)
       const c = new BigQueryConnector(cred as unknown as BigQueryCredential);
-      return (q) => c.query(q as SqlQuery);
+      return { queryFn: (q) => c.query(q as SqlQuery), endFn: undefined };
     }
     case "rest": {
+      // RestConnector is stateless (no persistent pool)
       const c = new RestConnector(cred as unknown as RestCredential);
-      return (q) => c.query(q as RestQuery);
+      return { queryFn: (q) => c.query(q as RestQuery), endFn: undefined };
     }
     default:
       throw new ConnectorDataSourceError(
@@ -155,8 +167,8 @@ export async function execute(args: ProxyArgs): Promise<QueryResult> {
   if (!entry || entry.credHash !== hash) {
     // Decrypt in memory. `cred` must never be logged or returned to callers.
     const cred = decryptCredential(encryptedCred);
-    const queryFn = _buildQueryFn(type, cred);
-    entry = { queryFn, credHash: hash };
+    const { queryFn, endFn } = _buildConnectorEntry(type, cred);
+    entry = { queryFn, endFn, credHash: hash };
     _cache.set(key, entry);
   }
 
@@ -164,9 +176,22 @@ export async function execute(args: ProxyArgs): Promise<QueryResult> {
   return entry.queryFn(query);
 }
 
-// ── Test helper ────────────────────────────────────────────────────────────────
+// ── Test helpers ───────────────────────────────────────────────────────────────
 
-/** Clear the connector cache. Only call in tests. */
+/** Clear the connector cache without draining pools. Only call in tests. */
 export function _clearConnectorCache(): void {
+  _cache.clear();
+}
+
+/**
+ * Drain all cached connector pools then clear the cache.
+ * Call in afterAll before stopping test containers so pg/mysql pools release
+ * their connections cleanly — avoids uncaught "terminating connection" errors.
+ */
+export async function _drainConnectorCache(): Promise<void> {
+  const drains = [..._cache.values()]
+    .filter((e) => e.endFn !== undefined)
+    .map((e) => e.endFn!().catch(() => undefined));
+  await Promise.all(drains);
   _cache.clear();
 }

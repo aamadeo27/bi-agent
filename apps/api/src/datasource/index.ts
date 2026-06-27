@@ -4,6 +4,7 @@ export {
   ProxyCredentialNotFoundError,
   ProxyDataSourceNotFoundError,
   _clearConnectorCache,
+  _drainConnectorCache,
 } from "./query-proxy.js";
 export type { ValidatedQuery, ProxyArgs } from "./query-proxy.js";
 
