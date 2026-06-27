@@ -4,6 +4,7 @@
 
 # DevTeam config — per-machine state is ignored, but the CI/CD gate config is committed
 .devteam/*
+debug/
 !.devteam/cicd.json
 
 # Dependencies
@@ -53,4 +54,5 @@ Thumbs.db
 .worktrees/
 
 # DevTeam config — not tracked per-machine
-.devteam/
+.devteam/kkkk
+PROJECT_STATUS.md
