@@ -222,12 +222,14 @@ describe("GET /api/conversations/:id/messages", () => {
       truncated: false,
     };
     const assistantMsg = {
-      ...MSG_ROW,
       id: "msg-2",
-      role: "assistant" as const,
+      conversation_id: "conv-1",
+      role: "assistant",
+      content: "Show me sales",
       query_type: "sql" as string | null,
       generated_query: "SELECT 1" as string | null,
       result_envelope: envelope as unknown,
+      created_at: NOW,
     };
     const app = buildApp(AUTH_A, multiQueryStub(CONV_ROW, [assistantMsg]));
     const res = await request(app).get("/api/conversations/conv-1/messages");
