@@ -187,7 +187,7 @@ describe("GET /api/conversations/:id/messages", () => {
   it("tenant isolation — user B cannot read user A's conversation (ownership check uses userId)", async () => {
     // AUTH_B attempts to fetch a conversation owned by user-a; ownership check passes userId
     let checkedUserId: unknown;
-    const app = buildApp(AUTH_B, (sql, convId, userId) => {
+    const app = buildApp(AUTH_B, (sql, _convId, userId) => {
       if (/FROM conversations\s+WHERE/.test(sql)) {
         checkedUserId = userId;
         // Simulate row not found because user_id doesn't match
@@ -224,10 +224,10 @@ describe("GET /api/conversations/:id/messages", () => {
     const assistantMsg = {
       ...MSG_ROW,
       id: "msg-2",
-      role: "assistant",
-      query_type: "sql",
-      generated_query: "SELECT 1",
-      result_envelope: envelope,
+      role: "assistant" as const,
+      query_type: "sql" as string | null,
+      generated_query: "SELECT 1" as string | null,
+      result_envelope: envelope as unknown,
     };
     const app = buildApp(AUTH_A, multiQueryStub(CONV_ROW, [assistantMsg]));
     const res = await request(app).get("/api/conversations/conv-1/messages");
