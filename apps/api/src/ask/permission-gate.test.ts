@@ -150,6 +150,44 @@ describe("allow on fully-granted queries", () => {
     });
     expect(result.allow).toBe(true);
   });
+
+  it("allows BigQuery dialect with 3-part name (project.dataset.table) — project prefix stripped from schema", () => {
+    // Grant uses dataset name only ("sales"), not "myproject.sales".
+    // The gate normalises "myproject.sales" → "sales" so it matches.
+    const grants: ResourceGrantSet = [tableGrant("sales", "orders")];
+    const result = evaluateGate({
+      query: sql("SELECT id FROM myproject.sales.orders"),
+      grants,
+      dialect: "bigquery",
+    });
+    expect(result.allow).toBe(true);
+  });
+
+  it("blocks BigQuery query when dataset grant is missing", () => {
+    const grants: ResourceGrantSet = [tableGrant("other_dataset", "orders")];
+    const result = evaluateGate({
+      query: sql("SELECT id FROM myproject.sales.orders"),
+      grants,
+      dialect: "bigquery",
+    });
+    expect(result.allow).toBe(false);
+    if (!result.allow) {
+      expect(result.missing[0]).toMatchObject({
+        kind: "table",
+        identifier: "sales.orders",
+      });
+    }
+  });
+
+  it("allows BigQuery 2-part name (dataset.table)", () => {
+    const grants: ResourceGrantSet = [tableGrant("sales", "orders")];
+    const result = evaluateGate({
+      query: sql("SELECT id FROM sales.orders"),
+      grants,
+      dialect: "bigquery",
+    });
+    expect(result.allow).toBe(true);
+  });
 });
 
 // ── Block on any missing resource ──────────────────────────────────────────────
@@ -174,7 +212,7 @@ describe("block on any missing resource (GAP-12 never-partial)", () => {
     }
   });
 
-  it("blocks when table is not granted at all", () => {
+  it("blocks when table is not granted at all — only table entry in missing[], no redundant column entries", () => {
     const grants: ResourceGrantSet = [tableGrant("sales", "users")];
     // 'orders' has no grant
     const result = evaluateGate({
@@ -184,10 +222,12 @@ describe("block on any missing resource (GAP-12 never-partial)", () => {
     });
     expect(result.allow).toBe(false);
     if (!result.allow) {
-      const tableEntry = result.missing.find(
-        (m) => m.identifier === "sales.orders"
-      );
-      expect(tableEntry).toBeDefined();
+      expect(result.missing).toHaveLength(1);
+      expect(result.missing[0]).toMatchObject({
+        kind: "table",
+        identifier: "sales.orders",
+        accessNeeded: "read",
+      });
     }
   });
 
@@ -380,26 +420,29 @@ describe("fail closed on unresolvable references", () => {
     expect(result.allow).toBe(false);
   });
 
-  it("blocks DDL/DML statements (not SELECT)", () => {
+});
+
+// ── Non-SELECT statement handling ─────────────────────────────────────────────
+
+describe("non-SELECT statement handling", () => {
+  it("blocks DDL/DML — gate sees DELETE table as 'delete' op (filtered) but WHERE column is ambiguous → fail closed", () => {
     const grants: ResourceGrantSet = [tableGrant("sales", "orders")];
     const result = evaluateGate({
       query: sql("DELETE FROM sales.orders WHERE id = 1"),
       grants,
       dialect: "postgres",
     });
-    // No column refs → table check passes → but no SELECT means no column refs.
-    // The table IS accessible, but we still let this through to the query validator.
-    // Gate only checks resources; query validator (T5.3) rejects non-SELECT.
-    // So this is a responsibility split: gate passes, validator rejects.
-    // Verify we don't crash and return a defined result:
-    expect(result).toHaveProperty("allow");
+    // DELETE tables appear under op "delete" in tableList — filtered out.
+    // WHERE column `id` appears under op "select" but with 0 real tables → ambiguous → fail closed.
+    // T5.3 query validator rejects non-SELECT before execution; gate adds a safety backstop.
+    expect(result.allow).toBe(false);
   });
 });
 
 // ── CTE and subquery handling ──────────────────────────────────────────────────
 
 describe("CTE and subquery resolution", () => {
-  it("blocks when CTE body references an ungraneted table", () => {
+  it("blocks when CTE body references an ungranted table", () => {
     const grants: ResourceGrantSet = []; // nothing granted
     const result = evaluateGate({
       query: sql(
@@ -528,7 +571,7 @@ describe("alias resolution", () => {
 // ── Exact missing[] payload ────────────────────────────────────────────────────
 
 describe("exact missing[] contract", () => {
-  it("missing[] contains exactly the ungraneted identifiers", () => {
+  it("missing[] contains exactly the ungranted identifiers", () => {
     const grants: ResourceGrantSet = [columnGrant("sales", "orders", "id")];
     const result = evaluateGate({
       query: sql("SELECT id, amount, revenue FROM sales.orders"),
@@ -549,7 +592,7 @@ describe("exact missing[] contract", () => {
 
   it("missing[] has no duplicates", () => {
     const grants: ResourceGrantSet = [];
-    // Both columns from same ungraneted table → table missing once, not twice.
+    // Both columns from same ungranted table → table missing once, not twice.
     const result = evaluateGate({
       query: sql("SELECT id, amount FROM sales.orders"),
       grants,
@@ -560,6 +603,26 @@ describe("exact missing[] contract", () => {
       const keys = result.missing.map((m) => `${m.kind}:${m.identifier}`);
       const uniqueKeys = [...new Set(keys)];
       expect(keys).toEqual(uniqueKeys);
+    }
+  });
+
+  it("missing[] has only the table entry when table is wholly ungranted — no redundant column entries", () => {
+    // Table grant is absent entirely. Per the grant model, a missing table entry
+    // already implies all columns are inaccessible; individual column entries are redundant.
+    const grants: ResourceGrantSet = [];
+    const result = evaluateGate({
+      query: sql("SELECT id, amount FROM sales.orders"),
+      grants,
+      dialect: "postgres",
+    });
+    expect(result.allow).toBe(false);
+    if (!result.allow) {
+      expect(result.missing).toHaveLength(1);
+      expect(result.missing[0]).toMatchObject({
+        kind: "table",
+        identifier: "sales.orders",
+        accessNeeded: "read",
+      });
     }
   });
 

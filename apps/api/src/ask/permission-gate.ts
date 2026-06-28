@@ -140,7 +140,15 @@ function parseTableEntries(
     // Skip virtual names (CTEs, subquery aliases).
     if (virtuals.has(rawTable)) continue;
 
-    const schema = rawSchema === "null" || !rawSchema ? null : rawSchema;
+    // BigQuery emits "project.dataset" in the schema slot for 3-part names.
+    // Grants use only the dataset name (project maps to the DataSource).
+    // Strip any leading project prefix by taking the last dot-separated segment.
+    const rawSchemaFinal =
+      rawSchema !== "null" && rawSchema.includes(".")
+        ? rawSchema.split(".").pop()!
+        : rawSchema;
+    const schema =
+      rawSchemaFinal === "null" || !rawSchemaFinal ? null : rawSchemaFinal;
     const key = `${schema}::${rawTable}`;
     if (!seen.has(key)) {
       seen.add(key);
@@ -239,11 +247,10 @@ export function evaluateGate(args: {
   const { query, grants, dialect } = args;
 
   // REST queries are not handled by the SQL gate in v1 → fail closed.
+  // missing:[] consistent with parse-error path; pipeline must not propagate
+  // a synthesized identifier that violates the PermissionBlock contract format.
   if (query.queryType !== "sql") {
-    return {
-      allow: false,
-      missing: [{ kind: "schema", identifier: "rest:*", accessNeeded: "read" }],
-    };
+    return { allow: false, missing: [] };
   }
 
   // Empty / whitespace-only SQL → fail closed.
@@ -298,10 +305,16 @@ export function evaluateGate(args: {
   }
 
   // ── Table-level checks ───────────────────────────────────────────────────
+  // blockedTables tracks "schema.table" keys that are already in missing[] as
+  // table-level entries.  Column checks skip these so missing[] stays exact —
+  // a table entry already implies all its columns are inaccessible.
+  const blockedTables = new Set<string>();
+
   for (const { schema, table } of realTables) {
     if (!schema) {
       // Unqualified table — can't verify without schema → fail closed.
       addMissing({ kind: "table", identifier: table, accessNeeded: "read" });
+      blockedTables.add(`null.${table}`);
       continue;
     }
     if (!isTableAccessible(schema, table, grants)) {
@@ -310,6 +323,7 @@ export function evaluateGate(args: {
         identifier: `${schema}.${table}`,
         accessNeeded: "read",
       });
+      blockedTables.add(`${schema}.${table}`);
     }
   }
 
@@ -339,9 +353,13 @@ export function evaluateGate(args: {
       if (realTables.length === 1) {
         const { schema, table } = realTables[0];
         if (!schema) {
-          addMissing({ kind: "column", identifier: column, accessNeeded: "read" });
+          if (!blockedTables.has(`null.${table}`)) {
+            addMissing({ kind: "column", identifier: column, accessNeeded: "read" });
+          }
           continue;
         }
+        // Skip: table already in missing[] → its columns are implied missing.
+        if (blockedTables.has(`${schema}.${table}`)) continue;
         if (!isColumnAllowed(schema, table, column, grants)) {
           addMissing({
             kind: "column",
@@ -368,9 +386,14 @@ export function evaluateGate(args: {
     }
     if (!schema) {
       // Table present but schema unknown → fail closed.
-      addMissing({ kind: "column", identifier: `${colTable}.${column}`, accessNeeded: "read" });
+      if (!blockedTables.has(`null.${colTable}`)) {
+        addMissing({ kind: "column", identifier: `${colTable}.${column}`, accessNeeded: "read" });
+      }
       continue;
     }
+
+    // Skip: table already in missing[] → column entries are implied.
+    if (blockedTables.has(`${schema}.${colTable}`)) continue;
 
     if (column === "(.*)" || column === ".*" || column === "*") {
       // Qualified wildcard → needs table grant.
