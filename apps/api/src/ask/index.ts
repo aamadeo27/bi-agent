@@ -1,3 +1,10 @@
-// TODO: ask pipeline — permission gate, query validator, LLM orchestrator, SSE response
-// See: docs/kb/patterns.md §permission-gate, §streaming-sse, docs/kb/common-pitfalls.md
-export {};
+// Ask pipeline — incrementally implemented across T5.x tasks.
+// See: docs/kb/patterns/permission-gate-middleware.md, streaming-sse.md
+
+export {
+  evaluateGate,
+  type Dialect,
+  type GeneratedQuery,
+  type ResourceRef,
+  type GateResult,
+} from "./permission-gate.js";
