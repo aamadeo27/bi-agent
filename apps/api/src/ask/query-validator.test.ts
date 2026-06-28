@@ -497,6 +497,76 @@ describe("REST — adversarial", () => {
   });
 });
 
+// ── Set-returning functions ────────────────────────────────────────────────────
+
+describe("SQL — set-returning functions (adversarial)", () => {
+  it("rejects pg_read_file in FROM clause", () => {
+    // pg_read_file is a file-access SRF; must be blocked by allow-list check.
+    const result = validateQuery(
+      sql("SELECT * FROM pg_read_file('/etc/passwd') AS t LIMIT 10"),
+      PG_OPTS,
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe("VALIDATION");
+      expect(result.error.message).toMatch(/allow.?list/i);
+    }
+  });
+
+  it("rejects dblink (remote connection SRF) in FROM clause", () => {
+    const result = validateQuery(
+      sql("SELECT * FROM dblink('host=evil dbname=pg', 'SELECT secret FROM creds') AS t LIMIT 10"),
+      PG_OPTS,
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe("VALIDATION");
+      expect(result.error.message).toMatch(/allow.?list/i);
+    }
+  });
+
+  it("rejects an unknown/novel SRF not in the allow-list", () => {
+    // Allow-list semantics: any SRF not explicitly listed must be blocked,
+    // even if it was not anticipated when the validator was written.
+    // Use simple alias syntax (no column defs) so the text check fires before
+    // any potential parse error.
+    const result = validateQuery(
+      sql("SELECT * FROM some_new_exotic_srf() AS t LIMIT 10"),
+      PG_OPTS,
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe("VALIDATION");
+      // Confirm allow-list semantics (not a deny-list) drove the rejection.
+      expect(result.error.message).toMatch(/allow.?list/i);
+    }
+  });
+
+  it("allows unnest (explicit allow-list member)", () => {
+    const result = validateQuery(
+      sql("SELECT val FROM unnest(ARRAY[1,2,3]) AS val LIMIT 10"),
+      PG_OPTS,
+    );
+    expect(result.ok).toBe(true);
+  });
+
+  it("allows generate_series (explicit allow-list member)", () => {
+    const result = validateQuery(
+      sql("SELECT * FROM generate_series(1, 10) AS s(n) LIMIT 10"),
+      PG_OPTS,
+    );
+    expect(result.ok).toBe(true);
+  });
+
+  it("allows jsonb_array_elements (explicit allow-list member)", () => {
+    const result = validateQuery(
+      sql(`SELECT val FROM jsonb_array_elements('[1,2,3]'::jsonb) AS val LIMIT 10`),
+      PG_OPTS,
+    );
+    expect(result.ok).toBe(true);
+  });
+});
+
 // ── Dialect variants ───────────────────────────────────────────────────────────
 
 describe("SQL — MySQL dialect", () => {

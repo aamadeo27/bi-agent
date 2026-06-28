@@ -30,22 +30,31 @@ export const DEFAULT_MAX_QUERY_LENGTH = 8_000;
 export const DEFAULT_MAX_ROW_LIMIT = 10_000;
 
 /**
- * Set-returning / file-access functions blocked in the FROM clause.
- * Prevents information exfiltration and file-system access via SRFs.
+ * Explicit allow-list of set-returning functions (SRFs) permitted in FROM clauses.
+ * Per KB query-validation-injection-guard: "set-returning functions not allow-listed"
+ * are rejected — semantics are allow-list (unknown = blocked), not deny-list.
+ *
+ * Add only SRFs that are safe for read-only analytics and carry no file/network access.
  */
-const BLOCKED_SRFS = new Set([
-  "pg_read_file",
-  "pg_read_binary_file",
-  "pg_ls_dir",
-  "pg_stat_file",
-  "pg_sleep",
-  "pg_cancel_backend",
-  "lo_export",
-  "lo_import",
-  "dblink",
-  "dblink_exec",
-  "copy_file_range",
-  "load_file",
+const ALLOWED_FROM_FUNCTIONS = new Set([
+  // Array expansion
+  "unnest",
+  // Series / subscript generation (date ranges, number sequences)
+  "generate_series",
+  "generate_subscripts",
+  // JSON / JSONB array expansion
+  "json_array_elements",
+  "jsonb_array_elements",
+  "json_array_elements_text",
+  "jsonb_array_elements_text",
+  // JSON / JSONB object expansion
+  "json_each",
+  "jsonb_each",
+  "json_each_text",
+  "jsonb_each_text",
+  // String splitting
+  "regexp_split_to_table",
+  "string_to_table",
 ]);
 
 /**
@@ -121,6 +130,10 @@ export interface ValidatorOptions {
 
 type ASTNode = Record<string, unknown>;
 
+// Module-level constant — hoisted out of parameterizeLiterals to avoid
+// per-call allocation during recursion.
+const PRESERVE_KEYS = new Set(["limit", "offset", "separator"]);
+
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
 function fail(message: string): ValidationResult {
@@ -138,19 +151,44 @@ function stripSqlComments(sql: string): string {
 }
 
 /**
- * Returns true when stripping comments reveals multiple `;`-delimited statements.
- * Detects the canonical comment-hiding attack:
- *   SELECT 1 -- ;\nDROP TABLE users
+ * Returns true when the SQL contains multiple `;`-delimited statements, including
+ * cases where the extra statements are hidden behind comments.
+ *
+ * Canonical attacks caught:
+ *   SELECT 1 -- ;\nDROP TABLE users   (line-comment hiding)
+ *   SELECT 1 /* x * /; DELETE FROM t  (block-comment hiding)
+ *   SELECT 1; DROP TABLE t            (plain chaining)
  */
-function hasCommentHiddenStatements(raw: string): boolean {
+function hasMultipleStatements(raw: string): boolean {
   const stripped = stripSqlComments(raw);
   const parts = stripped.split(";").map((p) => p.trim()).filter(Boolean);
   return parts.length > 1;
 }
 
 /**
+ * Extracts a function name from a node-sql-parser function `name` field.
+ * In v5 the name may be a plain string OR an object with a `name` array:
+ *   { name: [{ type: 'origin', value: 'pg_read_file' }] }
+ */
+function extractFunctionName(nameField: unknown): string | null {
+  if (typeof nameField === "string") return nameField.toLowerCase();
+  if (nameField && typeof nameField === "object") {
+    const n = nameField as ASTNode;
+    if (Array.isArray(n["name"])) {
+      const parts = (n["name"] as ASTNode[])
+        .map((p) => (typeof p["value"] === "string" ? (p["value"] as string) : ""))
+        .filter(Boolean);
+      if (parts.length > 0) return parts.join("").toLowerCase();
+    }
+  }
+  return null;
+}
+
+/**
  * Recursively collects names of table-valued / set-returning functions
- * appearing in FROM clauses.
+ * appearing in FROM clauses (AST-based detection).
+ *
+ * Handles both string and object name formats across node-sql-parser versions.
  */
 function collectFromFunctions(node: unknown, out: Set<string>): void {
   if (!node || typeof node !== "object") return;
@@ -165,8 +203,9 @@ function collectFromFunctions(node: unknown, out: Set<string>): void {
       const expr = fi["expr"];
       if (expr && typeof expr === "object") {
         const e = expr as ASTNode;
-        if (e["type"] === "function" && typeof e["name"] === "string") {
-          out.add((e["name"] as string).toLowerCase());
+        if (e["type"] === "function") {
+          const name = extractFunctionName(e["name"]);
+          if (name) out.add(name);
         }
       }
       collectFromFunctions(fi["expr"], out);
@@ -175,6 +214,25 @@ function collectFromFunctions(node: unknown, out: Set<string>): void {
 
   for (const key of Object.keys(n)) {
     if (key !== "from") collectFromFunctions(n[key], out);
+  }
+}
+
+// Regex to detect function calls in FROM / JOIN position on the stripped SQL.
+// Catches SRFs that the parser may treat as table references rather than functions,
+// and novel SRFs that would cause parse errors before the AST check runs.
+// Handles optional LATERAL keyword.
+const FROM_FUNCTION_RE = /\b(?:FROM|JOIN)\s+(?:LATERAL\s+)?(\w+)\s*\(/gi;
+
+/**
+ * Text-level scan for function calls in FROM/JOIN position.
+ * Belt-and-suspenders: runs before AST parsing so it catches SRFs that
+ * node-sql-parser parses as table names or rejects with a syntax error.
+ */
+function collectFromFunctionsViaText(strippedSql: string, out: Set<string>): void {
+  const re = new RegExp(FROM_FUNCTION_RE.source, "gi");
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(strippedSql)) !== null) {
+    out.add(match[1].toLowerCase());
   }
 }
 
@@ -274,9 +332,6 @@ function parameterizeLiterals(node: unknown, params: unknown[]): unknown {
     return { type: "origin", value: `$${params.length}` };
   }
 
-  // Structural keys that must not be parameterized.
-  const PRESERVE_KEYS = new Set(["limit", "offset", "separator"]);
-
   const result: ASTNode = {};
   for (const [key, val] of Object.entries(n)) {
     result[key] = PRESERVE_KEYS.has(key) ? val : parameterizeLiterals(val, params);
@@ -292,6 +347,12 @@ function dialectToDb(dialect: Dialect): string {
       return "MySQL";
     case "bigquery":
       return "BigQuery";
+    default: {
+      // Exhaustive guard: if Dialect grows, return the value as-is so the
+      // parser receives something rather than undefined.
+      const _exhaustive: never = dialect;
+      return _exhaustive;
+    }
   }
 }
 
@@ -358,8 +419,8 @@ function validateSqlQuery(
   const trimmed = sql.trim();
   if (!trimmed) return fail("Query is empty");
 
-  // 3. Comment-hidden multi-statement detection.
-  if (hasCommentHiddenStatements(trimmed)) {
+  // 3. Multi-statement detection (plain chains + comment-hidden).
+  if (hasMultipleStatements(trimmed)) {
     return fail(
       "Multi-statement query detected (comment-hidden or semicolon-chained)",
     );
@@ -372,6 +433,19 @@ function validateSqlQuery(
   }
   if (FILE_IO_RE.test(stripped)) {
     return fail("File I/O operation detected; not permitted");
+  }
+
+  // 4.5. Text-level FROM-function allow-list check — runs before AST parsing.
+  //      Catches SRFs that node-sql-parser treats as plain table names, and novel
+  //      SRFs whose syntax would cause a parse error before the AST check.
+  {
+    const textFns = new Set<string>();
+    collectFromFunctionsViaText(stripped, textFns);
+    for (const fn of textFns) {
+      if (!ALLOWED_FROM_FUNCTIONS.has(fn)) {
+        return fail(`Function not in FROM allow-list: ${fn}`);
+      }
+    }
   }
 
   // 5. Parse into AST.
@@ -411,12 +485,13 @@ function validateSqlQuery(
     return fail(`Blocked statement type in query: ${blockedSubType}`);
   }
 
-  // 9. Non-allow-listed set-returning functions in FROM.
+  // 9. Set-returning functions: allow-list semantics — anything not explicitly
+  //    allowed in ALLOWED_FROM_FUNCTIONS is rejected (KB: "not allow-listed → reject").
   const fromFns = new Set<string>();
   collectFromFunctions(node, fromFns);
   for (const fn of fromFns) {
-    if (BLOCKED_SRFS.has(fn)) {
-      return fail(`Function not permitted in FROM clause: ${fn}`);
+    if (!ALLOWED_FROM_FUNCTIONS.has(fn)) {
+      return fail(`Function not in FROM allow-list: ${fn}`);
     }
   }
 
@@ -431,8 +506,13 @@ function validateSqlQuery(
   let finalSql: string;
   try {
     finalSql = parser.sqlify(parameterizedAst as ASTNode, { database: dbOpt });
-  } catch {
-    // sqlify failure is non-fatal: return original validated SQL without params.
+  } catch (sqlifyErr) {
+    // sqlify failure is non-fatal: the AST-validated SQL is still safe to use.
+    // Log so parameterization fallbacks are observable in production.
+    console.warn(
+      "[query-validator] sqlify failed during parameterization; returning original validated SQL",
+      { error: (sqlifyErr as Error).message },
+    );
     finalSql = trimmed;
     params.length = 0;
   }
