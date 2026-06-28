@@ -10,6 +10,7 @@ import { meRouter } from "./me/index.js";
 import { authRouter } from "./auth/router.js";
 import { adminUsersRouter } from "./admin/users-router.js";
 import { rolesRouter, requireAdminCapability, schemaRouter, dataSourcesRouter } from "./admin/index.js";
+import { conversationsRouter } from "./conversations/router.js";
 
 // Initialize the dev-only error-tracking sink. No-ops gracefully when
 // SENTRY_DSN is unset (the default in dev/bootstrap) — see error-sink.ts.
@@ -43,6 +44,7 @@ protectedRouter.use("/admin/users", adminUsersRouter);
 protectedRouter.use("/admin/roles", requireAdminCapability, rolesRouter);
 protectedRouter.use("/admin/schema", requireAdminCapability, schemaRouter);
 protectedRouter.use("/admin/data-sources", requireAdminCapability, dataSourcesRouter);
+protectedRouter.use("/conversations", conversationsRouter);
 
 app.use("/api", protectedRouter);
 
