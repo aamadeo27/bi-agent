@@ -23,6 +23,7 @@
   "dependencies": {
     "@bi/contracts": "workspace:*",
     "@google-cloud/bigquery": "^7.9.0",
+    "@google/genai": "^1.0.0",
     "@node-rs/argon2": "^2.0.2",
     "@prisma/client": "^5.22.0",
     "@sentry/node": "^10.58.0",
