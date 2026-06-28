@@ -151,7 +151,7 @@ describe("GET /api/conversations/:id/messages", () => {
    * This route makes two raw queries: first getConversation (ownership check),
    * then messages SELECT. Return the appropriate rows based on sql content.
    */
-  function multiQueryStub(ownedConvRow: typeof CONV_ROW | null, msgRows: typeof MSG_ROW[]) {
+  function multiQueryStub(ownedConvRow: typeof CONV_ROW | null, msgRows: unknown[]) {
     return (sql: string) => {
       if (/FROM conversations\s+WHERE/.test(sql)) return ownedConvRow ? [ownedConvRow] : [];
       if (/FROM messages/.test(sql)) return msgRows;
@@ -226,9 +226,9 @@ describe("GET /api/conversations/:id/messages", () => {
       conversation_id: "conv-1",
       role: "assistant",
       content: "Show me sales",
-      query_type: "sql" as string | null,
-      generated_query: "SELECT 1" as string | null,
-      result_envelope: envelope as unknown,
+      query_type: "sql",
+      generated_query: "SELECT 1",
+      result_envelope: envelope,
       created_at: NOW,
     };
     const app = buildApp(AUTH_A, multiQueryStub(CONV_ROW, [assistantMsg]));
