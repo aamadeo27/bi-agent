@@ -20,7 +20,7 @@
  *   - Params must be string key/value pairs
  */
 
-import { Parser } from "node-sql-parser";
+import { Parser, type AST } from "node-sql-parser";
 import type { GeneratedQuery, Dialect } from "./permission-gate.js";
 import type { EndpointDecl } from "../datasource/rest-connector.js";
 
@@ -397,7 +397,13 @@ function parseRestCall(raw: string): ParsedRestCall | null {
         )
       : undefined;
 
-  return { endpoint: p["endpoint"] as string, fields, params };
+  // Use conditional spread so optional properties are absent (not `undefined`)
+  // when unset — required by exactOptionalPropertyTypes: true.
+  return {
+    endpoint: p["endpoint"] as string,
+    ...(fields !== undefined ? { fields } : {}),
+    ...(params !== undefined ? { params } : {}),
+  };
 }
 
 // ── SQL validator ──────────────────────────────────────────────────────────────
@@ -505,7 +511,7 @@ function validateSqlQuery(
   // 12. Reconstruct SQL from modified AST.
   let finalSql: string;
   try {
-    finalSql = parser.sqlify(parameterizedAst as ASTNode, { database: dbOpt });
+    finalSql = parser.sqlify(parameterizedAst as unknown as AST, { database: dbOpt });
   } catch (sqlifyErr) {
     // sqlify failure is non-fatal: the AST-validated SQL is still safe to use.
     // Log so parameterization fallbacks are observable in production.
