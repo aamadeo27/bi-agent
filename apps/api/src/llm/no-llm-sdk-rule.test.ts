@@ -84,7 +84,7 @@ describe("no-llm-sdk-outside-adapters — wired in eslint.config.js (AC3)", () =
     try {
       // grep exits 1 when no matches — treat stderr as empty output
       grepOutput = execSync(
-        `grep -rE "^import .* from ['\"]@google/genai" apps/api/src --include="*.ts" -l`,
+        `grep -rE "^import .* from ['"]@google/genai" apps/api/src --include="*.ts" -l`,
         { cwd: PROJECT_ROOT, encoding: "utf8" },
       );
     } catch (e: unknown) {
