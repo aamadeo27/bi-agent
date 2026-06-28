@@ -58,6 +58,38 @@ Read before working on the ask pipeline, RBAC, tenancy, or streaming. The
   break GAP-17 propagation and widen the blast radius.
 - **Storing refresh in localStorage.** Refresh lives in an httpOnly Secure cookie.
 
+## Data-source connectors
+
+- **Credential fields in API responses.** `config_encrypted` must be excluded from
+  every `SELECT` column list — never use `SELECT *` on the `data_sources` table.
+  `connectionConfig` / `config_encrypted` are write-only: accepted on POST/PATCH,
+  never returned in GET. Response mappers must omit them explicitly. A stray wildcard
+  leaks encrypted blobs (and signals to an attacker that a blob exists).
+  First seen: T4.1.
+
+- **Row cap via direct `LIMIT` on user SQL.** Don't append `LIMIT cap` to the
+  original SQL — it conflicts with an existing `LIMIT` in the user's query and
+  cannot detect truncation. Correct pattern: wrap the original SQL in a subquery
+  and fetch `cap + 1`:
+  ```ts
+  const wrapped = `SELECT * FROM (${q.sql}) AS _q LIMIT ${cap + 1}`;
+  const truncated = rawRows.length > cap;
+  const rows = truncated ? rawRows.slice(0, cap) : rawRows;
+  ```
+  First seen: T4.2.
+
+- **Nullable-column type inferred from first row.** If row 0 has `null` for a
+  column, `typeof null === 'object'` → the inferred type defaults to `"string"`,
+  hiding the true column type. Use a forward-scan helper (`firstNonNullValue(rows,
+  col)`) to find the first non-null sample before calling the type inferrer.
+  First seen: T4.2.
+
+- **Vault env bleed between test suites.** Tests that invoke `encryptCredential` /
+  `decryptCredential` must set `process.env.VAULT_MASTER_KEY` in `beforeEach` and
+  delete it in `afterEach`. Omitting the teardown causes later test suites to pick
+  up a stale key — or to crash because vault validates the key format on first call.
+  First seen: T4.1 / T4.2.
+
 ## Prisma / DB access (control plane vs data plane)
 - **Using Prisma for data-plane queries.** Prisma is **control plane only**
   (tenants/roles/users/grants/conversations/audit). Running a generated tenant query

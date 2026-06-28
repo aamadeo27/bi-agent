@@ -136,6 +136,37 @@ resolved resource set is **not** a subset of the role grants, or (b) the Query P
 |-------|------------|
 | `GET /health` | DB ping + process check (devops §3.1). Cloud Run health probe + one external uptime check (60 s interval) per env. |
 
+### 1.9 Data-source proxy & credential vault (epic 004)
+
+> New surface added by epic 004 (registry CRUD, connectors, credential vault, Query
+> Proxy L2). Instrumentation is tracked in
+> `docs/epics/004-datasources-proxy/MONITORING_TASKS.md` and lands with the OTel/pino
+> wiring (epic 007 / T7.3). Connector exec **latency/errors** are NOT re-counted here —
+> they roll up under `ask.datasource.duration.s` (§1.2, A6) and
+> `app.error.count{error_code=DATA_SOURCE}` (§1.4, A8) once epic 005 wires the proxy
+> into the ask pipeline.
+
+| Metric | Type | Labels | Source span / event |
+|--------|------|--------|---------------------|
+| `vault.decrypt.failure.count` | counter | `tenant_id`, `key_ref`, `reason`(`malformed`\|`version_unknown`\|`crypto`) | `decryptCredential` throw (`datasource/vault.ts`) |
+| `vault.encrypt.failure.count` | counter | `reason`(`master_key_missing`\|`master_key_invalid`\|`crypto`) | `encryptCredential` / `getMasterKey` throw (`datasource/vault.ts`) |
+| `datasource.credential.resolve.count` | counter | `tenant_id`, `role_name`, `data_source_kind`, `outcome`(`resolved`\|`credential_missing`\|`datasource_missing`) | Query Proxy `execute()` (`datasource/query-proxy.ts`) |
+| `datasource.test.count` | counter | `tenant_id`, `data_source_kind`, `outcome`(`success`\|`failure`) | S7 test-connection action (connector `testConnection`) |
+
+- **`vault.decrypt.failure.count` is a security signal.** AES-256-GCM auth-tag failure
+  (`reason=crypto`) means the stored envelope was tampered with **or** the master key
+  changed — either way L2 execution breaks. `reason` is coarse and carries **no**
+  ciphertext, plaintext, or key material (standing label rules apply). → alert **A13 (P1)**.
+- `vault.encrypt.failure.count` is an **operational/config** signal (master key missing
+  or wrong length ⇒ data-source admin writes 500). Dashboarded; also caught by the 5xx
+  alert (A9). No separate page — low-frequency admin action.
+- `datasource.credential.resolve.count{outcome=credential_missing}` surfaces an
+  **unprovisioned (tenant, role, source)** mapping — the operationally-heavy per-role
+  DB-role provisioning gap flagged in the epic risks. In epic 005 this becomes a
+  user-visible `DATA_SOURCE` failure; here it is the provisioning-backlog signal. → A14.
+- `datasource.test.count` reflects the S7 admin "test" action. Failures are an admin
+  misconfiguration signal (expected, dashboarded — not paged).
+
 ---
 
 ## 2. SLOs / thresholds (from GAP-8 perf caps + devops SLO)
@@ -171,6 +202,7 @@ on-call channel** (SLO burn / elevated failures), **P3 = ticket/daily digest**
 | **A2** | Cross-tenant access attempts | `rate(tenant.crosstenant.attempt.count)` by `tenant_id` | > 5 / 5 min from one tenant | 5 min | P2 → escalate P1 if sustained 30 min | Possible probing / broken client. Action: inspect source user, confirm middleware ignored it (it always should), check for a bug in client id handling. |
 | **A3** | Gate-block spike (single role) | `increase(gate.decision.count{outcome="block"})` by `tenant_id,role_name` | > 20 in 10 min for one role **and** > 3× that role's 7-day baseline | 10 min | P2 `#ops-pager` | Spike of blocks for one user/role = probing or a broken grant. Action: review grants vs the queries being blocked; not a failure by itself, but anomalous. |
 | **A4** | Auth failure spike | `rate(auth.login.count{outcome="failed"})` by `tenant_id` | > 10 / 5 min per tenant | 5 min | P2 `#ops-pager` | Credential stuffing / misconfigured SSO. Action: check source, consider rate-limit/lockout. |
+| **A13** | **Vault credential decrypt failure** | `increase(vault.decrypt.failure.count) > 0` | **any** (> 0) | 1 min, no recovery auto-close | **P1 — page `#sec-alerts`** | A stored credential envelope failed to decrypt. GCM auth-tag failure (`reason=crypto`) = tampering of `cred_vault_refs` at rest **or** a master-key mismatch — breaks L2 and may indicate compromise. Action: treat as incident — capture `requestId`/trace + `data_source_id`/`key_ref` (never the blob/plaintext), check KMS master-key/rotation state, verify cred-vault integrity. **Never silenced by deploy/maintenance suppression.** |
 
 ### Latency / availability (SLO)
 
@@ -189,15 +221,16 @@ on-call channel** (SLO burn / elevated failures), **P3 = ticket/daily digest**
 | A10 | LLM error rate | `rate(llm.error.count) / rate(ask.requests.count) > 0.05` | > 5% | 15 min | P2 `#ops-pager` | Provider outage / quota. Action: check `provider`/`model`; provider abstraction lets you fail over by config. |
 | A11 | Tenant LLM cost anomaly | `increase(llm.cost.usd[1d])` by `tenant_id` > 3× that tenant's trailing 7-day daily mean **and** > $5/day floor | trend | 1 day | P3 `#ops-digest` | Budget signal / runaway usage. Floor avoids paging on tiny absolute spikes. Action: review tenant query volume; consider per-tenant rate limit. |
 | A12 | Aborted-stream / leak | `rate(sse.stream.aborted.count{reason!="client_disconnect"})` high **or** `sse.streams.active` > N and rising for 15 min | abort > 1/min sustained, or active streams flat-high | 15 min | P3 `#ops-digest` | Back-pressure or leaked streams (client disconnects are normal and excluded). Action: check stream teardown / timeout handling. |
+| A14 | Unprovisioned data-source credential | `increase(datasource.credential.resolve.count{outcome="credential_missing"})` by `tenant_id,role_name,data_source_kind` | > 5 in 15 min for one (tenant,role,source) | 15 min | P2 `#ops-pager` | A role is hitting a source with **no provisioned least-privilege credential** (per-role DB-role provisioning gap). In epic 005 this fails the user's query. Action: provision the restricted credential for that (tenant,role,source) — not a code bug. |
 
 ### Suppression / dedup
 
-- **Deploy suppression:** A5–A10, A12 are silenced for 10 min after a deploy marker
-  (Cloud Run new-revision event) to avoid cold-start noise. **A1 (gate bypass/error)
-  and A2 (cross-tenant) are NEVER suppressed** — a security-control failure during a
-  deploy is still an incident.
-- **Maintenance windows:** ops can silence A5–A12 during announced maintenance; A1/A2
-  cannot be silenced (require an explicit, audited override).
+- **Deploy suppression:** A5–A10, A12, A14 are silenced for 10 min after a deploy marker
+  (Cloud Run new-revision event) to avoid cold-start noise. **A1 (gate bypass/error),
+  A2 (cross-tenant), and A13 (vault decrypt failure) are NEVER suppressed** — a
+  security-control failure during a deploy is still an incident.
+- **Maintenance windows:** ops can silence A5–A12, A14 during announced maintenance;
+  A1/A2/A13 cannot be silenced (require an explicit, audited override).
 - **Dedup:** group by `alertname` + `tenant_id` so one bad tenant doesn't fan out into
   N pages.
 
@@ -243,6 +276,13 @@ specs (metric + aggregation); import as JSON via T7.5.
 - Token-refresh success/failed.
 - Requests/sec by `status_class`; per-tenant request volume (`tenant.request.count`).
 
+### Group 7 — Data sources & credential vault (epic 004)
+- **Vault decrypt failures (BIG SINGLE-STAT, red if > 0):** `vault.decrypt.failure.count` — headline tile (A13).
+- Vault encrypt failures: `vault.encrypt.failure.count` by `reason`.
+- Credential resolution outcomes: `datasource.credential.resolve.count` by `outcome` (stacked) — watch `credential_missing` (unprovisioned roles, A14).
+- Data-source test outcomes: `datasource.test.count` by `data_source_kind`,`outcome` (S7 admin "test").
+- Data-source exec p95 by `data_source_id` / `data_source_kind` — cross-link to Group 2 / A6 (not duplicated here).
+
 ---
 
 ## 5. Logs (pino)
@@ -275,3 +315,6 @@ specs (metric + aggregation); import as JSON via T7.5.
 | Tenant isolation / cross-tenant | `tenant.crosstenant.attempt.count` (Group 1), A2 |
 | SSE streaming health | `sse.*` (Group 5), A12 |
 | Auth (failed logins, token refresh) | `auth.login.count`, `auth.token.refresh.count` (Group 6), A4 |
+| **Credential vault decrypt/encrypt health** (epic 004) | `vault.decrypt.failure.count`, `vault.encrypt.failure.count` (Group 7) → **A13 (P1)** |
+| Restricted-credential provisioning gaps (epic 004) | `datasource.credential.resolve.count` (Group 7), A14 |
+| Data-source connection test (S7) | `datasource.test.count` (Group 7) |

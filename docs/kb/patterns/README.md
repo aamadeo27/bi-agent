@@ -16,3 +16,7 @@ Implementation patterns every Task should follow. Item anchors match `kb-refs`
 - [error-handling](error-handling.md) — - Typed error taxonomy surfaced to the client as a discriminated union:
 - [auth-flow](auth-flow.md) — - **email+password:** argon2id verify → issue short-lived JWT access (~15m) +
 - [client-result-cache](client-result-cache.md) — SPA caches each message's full result envelope (TanStack Query); toggle/export read cache, no re-query.
+
+---
+
+See also → [common-pitfalls § Data-source connectors](../common-pitfalls.md#data-source-connectors) for credential-leak, row-cap, nullable-type, and vault-env pitfalls introduced in epic 004.
