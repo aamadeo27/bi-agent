@@ -1,5 +1,6 @@
 import { Router } from "express";
 import type { Router as ExpressRouter, Request, Response } from "express";
+import { z } from "zod";
 import type { ApiErrorResponse } from "@bi/contracts";
 import { logger } from "../observability/logger.js";
 import {
@@ -8,6 +9,11 @@ import {
   getMessages,
   deleteConversation,
 } from "./index.js";
+
+// Conversation id format: non-empty, max 128 chars (covers UUID and ULID).
+const ConversationIdSchema = z.object({
+  id: z.string().min(1).max(128),
+});
 
 export const conversationsRouter: ExpressRouter = Router();
 
@@ -44,7 +50,13 @@ conversationsRouter.post("/", async (req: Request, res: Response) => {
 
 conversationsRouter.get("/:id/messages", async (req: Request, res: Response) => {
   const userId = req.auth!.userId;
-  const { id } = req.params;
+  const parsed = ConversationIdSchema.safeParse(req.params);
+  if (!parsed.success) {
+    const body: ApiErrorResponse = { code: "VALIDATION", message: "Invalid conversation id" };
+    res.status(400).json(body);
+    return;
+  }
+  const { id } = parsed.data;
   try {
     const messages = await req.withTenantTx!((tx) => getMessages(tx, id, userId));
     if (messages === null) {
@@ -64,7 +76,13 @@ conversationsRouter.get("/:id/messages", async (req: Request, res: Response) => 
 
 conversationsRouter.delete("/:id", async (req: Request, res: Response) => {
   const userId = req.auth!.userId;
-  const { id } = req.params;
+  const parsed = ConversationIdSchema.safeParse(req.params);
+  if (!parsed.success) {
+    const body: ApiErrorResponse = { code: "VALIDATION", message: "Invalid conversation id" };
+    res.status(400).json(body);
+    return;
+  }
+  const { id } = parsed.data;
   try {
     const deleted = await req.withTenantTx!((tx) => deleteConversation(tx, id, userId));
     if (!deleted) {

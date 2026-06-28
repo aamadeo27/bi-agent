@@ -48,7 +48,7 @@ interface MessageRow {
   content: string;
   query_type: string | null;
   generated_query: string | null;
-  result_envelope: unknown | null;
+  result_envelope: unknown;
   created_at: Date;
 }
 

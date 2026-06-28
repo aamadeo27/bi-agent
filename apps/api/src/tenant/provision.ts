@@ -145,6 +145,10 @@ export async function provisionTenant(
       );
 
       // Messages
+      // The CREATE TABLE body includes query_type / generated_query / result_envelope for
+      // fresh tenants. The ALTER TABLE ADD COLUMN IF NOT EXISTS stmts below are the
+      // idempotent migration path for tenants whose schema was provisioned before these
+      // columns were added — both paths are required so the function stays re-entrant.
       await tx.$executeRawUnsafe(`
         CREATE TABLE IF NOT EXISTS "${s}"."messages" (
           "id"               TEXT        NOT NULL,
@@ -163,7 +167,7 @@ export async function provisionTenant(
       await tx.$executeRawUnsafe(
         `CREATE INDEX IF NOT EXISTS "messages_conv_idx" ON "${s}"."messages"("conversation_id")`
       );
-      // Idempotent backfill — safe to run on existing tenants
+      // Idempotent backfill for existing tenants provisioned before these columns existed.
       await tx.$executeRawUnsafe(
         `ALTER TABLE "${s}"."messages" ADD COLUMN IF NOT EXISTS "query_type" TEXT`
       );
