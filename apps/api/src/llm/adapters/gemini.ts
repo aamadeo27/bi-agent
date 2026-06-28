@@ -97,9 +97,16 @@ export function parseQueryProposal(raw: string): QueryProposal {
   if (!Array.isArray(p.referencedResources)) {
     throw new Error("GeminiProvider: referencedResources must be an array");
   }
+  const resources = p.referencedResources as unknown[];
+  const badIdx = resources.findIndex((e) => typeof e !== "string");
+  if (badIdx !== -1) {
+    throw new Error(
+      `GeminiProvider: referencedResources[${badIdx}] is not a string (got ${typeof resources[badIdx]})`,
+    );
+  }
   return {
     queryType: p.queryType,
     query: p.query,
-    referencedResources: p.referencedResources as string[],
+    referencedResources: resources as string[],
   };
 }

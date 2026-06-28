@@ -55,11 +55,20 @@ describe("MockLlmProvider", () => {
     });
   });
 
-  it("generateQuery returns a copy (mutations don't affect internal state)", async () => {
+  it("generateQuery returns a copy — scalar mutation doesn't affect internal state", async () => {
     const result = await mock.generateQuery({ userMessage: "x" });
     result.query = "MUTATED";
     const result2 = await mock.generateQuery({ userMessage: "x" });
     expect(result2.query).toBe("SELECT 1");
+  });
+
+  it("generateQuery deep-copies referencedResources — array mutation doesn't corrupt subsequent calls", async () => {
+    mock.queryProposal = { queryType: "sql", query: "SELECT 1", referencedResources: ["orders", "sales"] };
+    const result = await mock.generateQuery({ userMessage: "x" });
+    result.referencedResources.push("INJECTED");
+    result.referencedResources[0] = "MUTATED";
+    const result2 = await mock.generateQuery({ userMessage: "x" });
+    expect(result2.referencedResources).toEqual(["orders", "sales"]);
   });
 
   it("generateQuery records call", async () => {

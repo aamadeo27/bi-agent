@@ -36,7 +36,7 @@ export class MockLlmProvider implements LlmProvider {
   async generateQuery(input: LlmRequest): Promise<QueryProposal> {
     this.calls.push({ method: "generateQuery", input });
     if (this.queryError) throw this.queryError;
-    return { ...this.queryProposal };
+    return { ...this.queryProposal, referencedResources: [...this.queryProposal.referencedResources] };
   }
 
   /** Reset all mutable state between tests. */

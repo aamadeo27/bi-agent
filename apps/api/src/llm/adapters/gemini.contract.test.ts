@@ -98,6 +98,26 @@ describe("GeminiProvider — contract (fixture-based, no network)", () => {
       const raw = JSON.stringify({ queryType: "sql", query: "SELECT 1", referencedResources: "sales" });
       expect(() => parseQueryProposal(raw)).toThrow("referencedResources must be an array");
     });
+
+    it("throws when referencedResources contains non-string elements", () => {
+      const raw = JSON.stringify({ queryType: "sql", query: "SELECT 1", referencedResources: [1, "sales"] });
+      expect(() => parseQueryProposal(raw)).toThrow(/referencedResources\[0\] is not a string/);
+    });
+
+    it("throws when referencedResources contains only non-string elements", () => {
+      const raw = JSON.stringify({ queryType: "sql", query: "SELECT 1", referencedResources: [42] });
+      expect(() => parseQueryProposal(raw)).toThrow("is not a string");
+    });
+
+    it("accepts referencedResources with multiple valid strings", () => {
+      const raw = JSON.stringify({
+        queryType: "sql",
+        query: "SELECT * FROM orders JOIN customers",
+        referencedResources: ["orders", "customers"],
+      });
+      const result = parseQueryProposal(raw);
+      expect(result.referencedResources).toEqual(["orders", "customers"]);
+    });
   });
 
   // ---- GeminiProvider.generateQuery (mocked SDK) ----
@@ -195,7 +215,7 @@ describe("GeminiProvider — contract (fixture-based, no network)", () => {
         yield { text: " by" };
         yield { text: " region" };
       }
-      mockGenerateContentStream.mockReturnValue(fakeStream());
+      mockGenerateContentStream.mockResolvedValue(fakeStream());
 
       const provider = new GeminiProvider({ model: "gemini-2.0-flash", apiKey: "test" });
       const tokens: string[] = [];
@@ -213,7 +233,7 @@ describe("GeminiProvider — contract (fixture-based, no network)", () => {
         yield { text: "" };       // empty — should be skipped
         yield { text: " world" };
       }
-      mockGenerateContentStream.mockReturnValue(fakeStream());
+      mockGenerateContentStream.mockResolvedValue(fakeStream());
 
       const provider = new GeminiProvider({ model: "gemini-2.0-flash", apiKey: "test" });
       const tokens: string[] = [];
@@ -225,7 +245,7 @@ describe("GeminiProvider — contract (fixture-based, no network)", () => {
 
     it("passes systemPrompt via config.systemInstruction", async () => {
       async function* empty() { /* no yields */ }
-      mockGenerateContentStream.mockReturnValue(empty());
+      mockGenerateContentStream.mockResolvedValue(empty());
 
       const provider = new GeminiProvider({ model: "gemini-2.0-flash", apiKey: "test" });
       for await (const _ of provider.streamText({
