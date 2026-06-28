@@ -40,6 +40,7 @@
   },
   "devDependencies": {
     "@testcontainers/mysql": "^10.0.0",
+    "eslint": "^9.13.0",
     "@testcontainers/postgresql": "^10.0.0",
     "@types/pg": "^8.11.0",
     "@types/cookie-parser": "^1.4.10",

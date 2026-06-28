@@ -1,129 +1,88 @@
 /**
- * Unit tests for the `no-llm-sdk-outside-adapters` ESLint custom rule (AC3).
+ * Tests for the `no-llm-sdk-outside-adapters` ESLint custom rule (AC3).
  *
- * The rule lives in eslint.config.js (root). We test the rule's `create`
- * logic directly via a minimal ESLint-compatible mock context — no ESLint
- * installation required, no network, no temp files.
- *
- * If these tests pass and the rule is registered in eslint.config.js
- * (verified by the "wired" test below), the import boundary is enforced.
+ * Uses the real ESLint API (`ESLint.lintText`) which loads the project's
+ * actual `eslint.config.js` — so these tests exercise the real rule, not
+ * a hand-rolled copy.  If the rule is removed or reconfigured in the config,
+ * these tests break.
  */
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
+import { execSync } from "node:child_process";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { ESLint } from "eslint";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const PROJECT_ROOT = resolve(__dirname, "../../../../");
 
-// ---- Inline copy of the rule's create function (mirrors eslint.config.js) ----
-// Kept in sync with eslint.config.js. If the rule changes there, update here too.
+const RULE_ID = "local-rules/no-llm-sdk-outside-adapters";
 
-interface FakeNode {
-  source: { value: unknown };
-  importKind?: string;
+// Helper — run the real ESLint config against a code snippet at a virtual filePath.
+async function lint(code: string, virtualPath: string) {
+  const eslint = new ESLint({ cwd: PROJECT_ROOT });
+  const [result] = await eslint.lintText(code, {
+    filePath: join(PROJECT_ROOT, virtualPath),
+  });
+  return result.messages;
 }
 
-interface Report {
-  pkg: string;
-}
-
-function createRuleContext(filePath: string, reports: Report[]) {
-  return {
-    filename: filePath.replace(/\\/g, "/"),
-    report({ data }: { node: FakeNode; messageId: string; data?: { pkg: string } }) {
-      reports.push({ pkg: data?.pkg ?? "?" });
-    },
-  };
-}
-
-function runNoLlmSdkRule(filePath: string, importSource: string): Report[] {
-  const reports: Report[] = [];
-  const context = createRuleContext(filePath, reports);
-  const normalizedPath = context.filename;
-
-  // Mirrors the rule's ImportDeclaration handler from eslint.config.js
-  if (
-    typeof importSource === "string" &&
-    importSource.startsWith("@google/genai") &&
-    !normalizedPath.includes("apps/api/src/llm/adapters/")
-  ) {
-    reports.push({ pkg: importSource });
-  }
-
-  return reports;
-}
-
-// ---- Tests ----
-
-describe("no-llm-sdk-outside-adapters rule logic (AC3)", () => {
-  it("blocks @google/genai import outside adapters/", () => {
-    const violations = runNoLlmSdkRule(
+describe("no-llm-sdk-outside-adapters — real ESLint enforcement (AC3)", () => {
+  it("flags @google/genai import outside adapters/", async () => {
+    const messages = await lint(
+      `import { GoogleGenAI } from "@google/genai";\n`,
       "apps/api/src/ask/pipeline.ts",
-      "@google/genai",
     );
-    expect(violations).toHaveLength(1);
-    expect(violations[0].pkg).toBe("@google/genai");
+    const violation = messages.find((m) => m.ruleId === RULE_ID);
+    expect(violation, "Expected rule to report an error but found none").toBeDefined();
+    expect(violation?.severity).toBe(2); // 2 = error
   });
 
-  it("blocks @google/genai sub-path import outside adapters/", () => {
-    const violations = runNoLlmSdkRule(
+  it("flags @google/genai sub-path import outside adapters/", async () => {
+    const messages = await lint(
+      `import something from "@google/genai/lite";\n`,
       "apps/api/src/some-module.ts",
-      "@google/genai/lite",
     );
-    expect(violations).toHaveLength(1);
+    const violation = messages.find((m) => m.ruleId === RULE_ID);
+    expect(violation).toBeDefined();
   });
 
-  it("allows @google/genai inside apps/api/src/llm/adapters/", () => {
-    const violations = runNoLlmSdkRule(
+  it("allows @google/genai import inside adapters/", async () => {
+    const messages = await lint(
+      `import { GoogleGenAI } from "@google/genai";\n`,
       "apps/api/src/llm/adapters/gemini.ts",
-      "@google/genai",
     );
+    const violations = messages.filter((m) => m.ruleId === RULE_ID);
     expect(violations).toHaveLength(0);
   });
 
-  it("allows any other package import outside adapters/", () => {
-    expect(runNoLlmSdkRule("apps/api/src/ask/pipeline.ts", "zod")).toHaveLength(0);
-    expect(runNoLlmSdkRule("apps/api/src/ask/pipeline.ts", "@google-cloud/bigquery")).toHaveLength(0);
-    expect(runNoLlmSdkRule("apps/api/src/ask/pipeline.ts", "express")).toHaveLength(0);
-  });
-
-  it("handles Windows-style backslash paths correctly", () => {
-    // The rule normalises \\ → / before checking; verify the logic does the same.
-    const violations = runNoLlmSdkRule(
-      "apps\\api\\src\\ask\\pipeline.ts",
-      "@google/genai",
+  it("does not flag other packages outside adapters/", async () => {
+    const messages = await lint(
+      `import { z } from "zod";\nimport express from "express";\n`,
+      "apps/api/src/ask/pipeline.ts",
     );
-    expect(violations).toHaveLength(1);
-  });
-
-  it("allows adapters/ path with Windows backslashes", () => {
-    const violations = runNoLlmSdkRule(
-      "apps\\api\\src\\llm\\adapters\\gemini.ts",
-      "@google/genai",
-    );
+    const violations = messages.filter((m) => m.ruleId === RULE_ID);
     expect(violations).toHaveLength(0);
   });
 });
 
 describe("no-llm-sdk-outside-adapters — wired in eslint.config.js (AC3)", () => {
-  it("rule is registered in the project ESLint config", () => {
+  it("rule is registered at 'error' severity for all api .ts files", () => {
     const configSrc = readFileSync(
       join(PROJECT_ROOT, "eslint.config.js"),
       "utf8",
     );
     expect(configSrc).toContain("no-llm-sdk-outside-adapters");
-    expect(configSrc).toContain("@google/genai");
-    // Verify the rule is set to 'error' level, not just defined
-    expect(configSrc).toContain('"error"');
+    // Tightened: assert the exact rule-name + severity pair, not loose string presence.
+    expect(configSrc).toMatch(
+      /"local-rules\/no-llm-sdk-outside-adapters":\s*"error"/,
+    );
   });
 
-  it("gemini.ts is the only api source file that contains an @google/genai import statement", () => {
-    // Grep for actual import declarations, not string mentions of the package name.
-    const { execSync } = require("node:child_process");
+  it("only files under llm/adapters/ contain a @google/genai import statement", () => {
     let grepOutput = "";
     try {
-      // grep exits 1 when no matches — treat as empty output
+      // grep exits 1 when no matches — treat stderr as empty output
       grepOutput = execSync(
         `grep -rE "^import .* from ['\"]@google/genai" apps/api/src --include="*.ts" -l`,
         { cwd: PROJECT_ROOT, encoding: "utf8" },
