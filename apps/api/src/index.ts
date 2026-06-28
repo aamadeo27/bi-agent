@@ -11,6 +11,7 @@ import { authRouter } from "./auth/router.js";
 import { adminUsersRouter } from "./admin/users-router.js";
 import { rolesRouter, requireAdminCapability, schemaRouter, dataSourcesRouter } from "./admin/index.js";
 import { conversationsRouter } from "./conversations/router.js";
+import { startRetentionScheduler } from "./conversations/retention-scheduler.js";
 
 // Initialize the dev-only error-tracking sink. No-ops gracefully when
 // SENTRY_DSN is unset (the default in dev/bootstrap) — see error-sink.ts.
@@ -56,6 +57,8 @@ const port = Number(process.env["PORT"] ?? 3000);
 if (process.env["NODE_ENV"] !== "test") {
   // Validate JWT_SECRET at startup — fail fast instead of 401-ing every request.
   initAuth();
+  // Start daily retention purge — safe to run concurrently, unref'd timer.
+  startRetentionScheduler();
   app.listen(port, () => {
     logger.info({ port }, "API listening");
   });
