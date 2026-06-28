@@ -63,30 +63,6 @@ function buildApp(
   return app;
 }
 
-/**
- * Builds an app where auth is deliberately absent — simulates missing middleware.
- * Used to verify routes require req.auth.
- */
-function buildUnauthApp(
-  queryStub: (sql: string, ...args: unknown[]) => unknown = () => [],
-): Application {
-  const app = express();
-  app.use(express.json());
-  app.use((req, _res, next) => {
-    // req.auth intentionally NOT set
-    req.withTenantTx = <T>(fn: (tx: Prisma.TransactionClient) => Promise<T>) =>
-      fn({
-        $queryRawUnsafe: vi.fn().mockImplementation((sql: string, ...args: unknown[]) =>
-          Promise.resolve(queryStub(sql, ...args)),
-        ),
-        $executeRawUnsafe: vi.fn().mockResolvedValue(0),
-      } as unknown as Prisma.TransactionClient);
-    next();
-  });
-  app.use("/api/conversations", conversationsRouter);
-  return app;
-}
-
 // ---------------------------------------------------------------------------
 // GET /api/conversations
 // ---------------------------------------------------------------------------
