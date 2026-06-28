@@ -145,13 +145,20 @@ export async function provisionTenant(
       );
 
       // Messages
+      // The CREATE TABLE body includes query_type / generated_query / result_envelope for
+      // fresh tenants. The ALTER TABLE ADD COLUMN IF NOT EXISTS stmts below are the
+      // idempotent migration path for tenants whose schema was provisioned before these
+      // columns were added — both paths are required so the function stays re-entrant.
       await tx.$executeRawUnsafe(`
         CREATE TABLE IF NOT EXISTS "${s}"."messages" (
-          "id"              TEXT        NOT NULL,
-          "conversation_id" TEXT        NOT NULL,
-          "role"            TEXT        NOT NULL,
-          "content"         TEXT        NOT NULL,
-          "created_at"      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          "id"               TEXT        NOT NULL,
+          "conversation_id"  TEXT        NOT NULL,
+          "role"             TEXT        NOT NULL,
+          "content"          TEXT        NOT NULL,
+          "query_type"       TEXT,
+          "generated_query"  TEXT,
+          "result_envelope"  JSONB,
+          "created_at"       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
           CONSTRAINT "messages_pkey" PRIMARY KEY ("id"),
           CONSTRAINT "messages_conv_fk"
             FOREIGN KEY ("conversation_id") REFERENCES "${s}"."conversations"("id") ON DELETE CASCADE
@@ -159,6 +166,16 @@ export async function provisionTenant(
       `);
       await tx.$executeRawUnsafe(
         `CREATE INDEX IF NOT EXISTS "messages_conv_idx" ON "${s}"."messages"("conversation_id")`
+      );
+      // Idempotent backfill for existing tenants provisioned before these columns existed.
+      await tx.$executeRawUnsafe(
+        `ALTER TABLE "${s}"."messages" ADD COLUMN IF NOT EXISTS "query_type" TEXT`
+      );
+      await tx.$executeRawUnsafe(
+        `ALTER TABLE "${s}"."messages" ADD COLUMN IF NOT EXISTS "generated_query" TEXT`
+      );
+      await tx.$executeRawUnsafe(
+        `ALTER TABLE "${s}"."messages" ADD COLUMN IF NOT EXISTS "result_envelope" JSONB`
       );
 
       // Audit events — immutable log; no FK to keep insert fast under load
