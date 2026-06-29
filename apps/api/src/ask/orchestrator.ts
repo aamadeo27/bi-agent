@@ -71,6 +71,21 @@ export class OrchestratorError extends Error {
   }
 }
 
+/**
+ * Throw (or have the LLM adapter throw) this when the model cannot generate
+ * a query because it needs clarification from the user.
+ *
+ * The orchestrator catches this specifically and emits an SSE `error` event
+ * with code `CLARIFICATION` so the client can render the clarification UI state.
+ */
+export class LlmClarificationError extends Error {
+  readonly code = "CLARIFICATION" as const;
+  constructor(message: string) {
+    super(message);
+    this.name = "LlmClarificationError";
+  }
+}
+
 // ── DB row shapes ──────────────────────────────────────────────────────────────
 
 interface GrantRow {
@@ -176,22 +191,36 @@ function toProxyQuery(validated: ValidatorQuery): ProxyQuery {
 
 /**
  * Classify an unknown error from the pipeline into an error code + safe message.
+ * Covers all codes from the error-codes contract: GATE_BLOCK | CLARIFICATION |
+ * VALIDATION | DATA_SOURCE | LLM_ERROR | AUTH | TENANT | NOT_FOUND | RATE_LIMIT | INTERNAL.
  * Never leaks raw stack traces or credentials.
  */
 function classifyError(err: unknown): { code: string; message: string } {
+  // Named orchestrator / clarification errors carry their own code
+  if (err instanceof LlmClarificationError) {
+    return { code: "CLARIFICATION", message: err.message };
+  }
   if (err instanceof OrchestratorError) {
     return { code: err.code, message: err.message };
   }
   if (err instanceof Error) {
-    // Typed proxy errors carry a `.code` property
+    // Typed proxy / adapter errors carry a `.code` property
     if ("code" in err && typeof (err as { code: unknown }).code === "string") {
       const code = (err as { code: string }).code;
-      // Sanitize: only allow known codes
-      const knownCodes = new Set([
-        "DATA_SOURCE", "NOT_FOUND", "AUTH", "TENANT", "VALIDATION", "INTERNAL",
+      // Allow-list: all contract error codes that are safe to surface to the client
+      const allowedCodes = new Set([
+        "CLARIFICATION",
+        "VALIDATION",
+        "DATA_SOURCE",
+        "LLM_ERROR",
+        "AUTH",
+        "TENANT",
+        "NOT_FOUND",
+        "RATE_LIMIT",
+        "INTERNAL",
       ]);
-      if (knownCodes.has(code)) {
-        // Don't expose raw DB / credential errors to the client
+      if (allowedCodes.has(code)) {
+        // Sanitize DB / credential error message to avoid leaking internals
         const safeMsg =
           code === "DATA_SOURCE"
             ? "Data source error — unable to execute the query."

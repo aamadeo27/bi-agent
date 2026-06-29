@@ -18,17 +18,38 @@ const ConversationIdSchema = z.object({
   id: z.string().min(1).max(128),
 });
 
-// ── LLM provider singleton — created once on first request ───────────────────
+// ── LLM provider singleton ────────────────────────────────────────────────────
+//
+// NOTE (lifecycle decision): The singleton is created lazily on first request and
+// cached for the process lifetime. Hot-reload on config change and per-instance
+// isolation in multi-process deployments are not yet handled — that is an
+// Architect-level decision (see T5.5 concern). Tests may override via
+// _setLlmProvider() before mounting the router.
 
-let _llmProvider: ReturnType<typeof createLlmProvider> | undefined;
+import type { LlmProvider } from "../llm/port.js";
 
-function getLlmProvider(): ReturnType<typeof createLlmProvider> {
+let _llmProvider: LlmProvider | undefined;
+
+function getLlmProvider(): LlmProvider {
   _llmProvider ??= createLlmProvider({
     provider: process.env["LLM_PROVIDER"] ?? "gemini",
     model: process.env["LLM_MODEL"] ?? "gemini-2.0-flash",
     apiKey: process.env["GEMINI_API_KEY"] ?? "",
   });
   return _llmProvider;
+}
+
+/**
+ * Override the LLM provider — for use in tests only.
+ * Call _resetLlmProvider() in afterEach to restore production behaviour.
+ */
+export function _setLlmProvider(provider: LlmProvider): void {
+  _llmProvider = provider;
+}
+
+/** Reset the provider singleton — for test teardown. */
+export function _resetLlmProvider(): void {
+  _llmProvider = undefined;
 }
 
 export const conversationsRouter: ExpressRouter = Router();
@@ -41,7 +62,7 @@ conversationsRouter.get("/", async (req: Request, res: Response) => {
     const conversations = await req.withTenantTx!((tx) => listConversations(tx, userId));
     res.json(conversations);
   } catch (err) {
-    logger.error(err, "conversations GET / error");
+    logger.error({ err }, "conversations GET / error");
     const body: ApiErrorResponse = { code: "INTERNAL", message: "Failed to list conversations" };
     res.status(500).json(body);
   }
@@ -56,7 +77,7 @@ conversationsRouter.post("/", async (req: Request, res: Response) => {
     const conversation = await req.withTenantTx!((tx) => createConversation(tx, id, userId));
     res.status(201).json(conversation);
   } catch (err) {
-    logger.error(err, "conversations POST error");
+    logger.error({ err }, "conversations POST error");
     const body: ApiErrorResponse = { code: "INTERNAL", message: "Failed to create conversation" };
     res.status(500).json(body);
   }
@@ -82,7 +103,7 @@ conversationsRouter.get("/:id/messages", async (req: Request, res: Response) => 
     }
     res.json(messages);
   } catch (err) {
-    logger.error(err, "conversations GET /:id/messages error");
+    logger.error({ err }, "conversations GET /:id/messages error");
     const body: ApiErrorResponse = { code: "INTERNAL", message: "Failed to fetch messages" };
     res.status(500).json(body);
   }
@@ -118,17 +139,29 @@ conversationsRouter.post("/:id/messages", async (req: Request, res: Response) =>
   }
   const { text } = bodyParsed.data;
 
-  // ── 3. Require a role ───────────────────────────────────────────────────────
-  const auth = req.auth!;
+  // ── 3. Guard: auth middleware must have run ─────────────────────────────────
+  if (!req.auth) {
+    const body: ApiErrorResponse = { code: "AUTH", message: "Not authenticated" };
+    res.status(401).json(body);
+    return;
+  }
+  if (!req.withTenantTx) {
+    const body: ApiErrorResponse = { code: "INTERNAL", message: "Server configuration error" };
+    res.status(500).json(body);
+    return;
+  }
+  const auth = req.auth;
+
+  // ── 4. Require a role ───────────────────────────────────────────────────────
   if (!auth.roleId) {
     const body: ApiErrorResponse = { code: "AUTH", message: "You must have a role assigned to use the Ask feature" };
     res.status(403).json(body);
     return;
   }
 
-  // ── 4. Verify conversation ownership (before SSE headers, so 404 is possible) ──
+  // ── 5. Verify conversation ownership (before SSE headers, so 404 is possible) ──
   try {
-    const conv = await req.withTenantTx!((tx) =>
+    const conv = await req.withTenantTx((tx) =>
       getConversation(tx, conversationId, auth.userId),
     );
     if (!conv) {
@@ -137,13 +170,13 @@ conversationsRouter.post("/:id/messages", async (req: Request, res: Response) =>
       return;
     }
   } catch (err) {
-    logger.error(err, "conversations POST /:id/messages ownership check error");
+    logger.error({ err }, "conversations POST /:id/messages ownership check error");
     const body: ApiErrorResponse = { code: "INTERNAL", message: "Failed to verify conversation" };
     res.status(500).json(body);
     return;
   }
 
-  // ── 5. Open SSE stream ──────────────────────────────────────────────────────
+  // ── 6. Open SSE stream ──────────────────────────────────────────────────────
   res.status(200).set({
     "Content-Type": "text/event-stream",
     "Cache-Control": "no-cache, no-transform",
@@ -153,13 +186,24 @@ conversationsRouter.post("/:id/messages", async (req: Request, res: Response) =>
   res.flushHeaders();
 
   const ac = new AbortController();
+  // Client disconnect → abort the upstream LLM stream (no leak)
   req.on("close", () => ac.abort());
 
+  /**
+   * Write one SSE event.
+   * Backpressure: if the kernel write buffer is full (res.write returns false),
+   * abort the upstream stream to prevent unbounded memory growth on slow consumers.
+   */
   const send = (event: string, data: unknown): void => {
-    res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    if (ac.signal.aborted || res.destroyed) return;
+    const ok = res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    if (!ok) {
+      // Kernel buffer full — abort to avoid unbounded buffering
+      ac.abort();
+    }
   };
 
-  // ── 6. Run pipeline ─────────────────────────────────────────────────────────
+  // ── 7. Run pipeline ─────────────────────────────────────────────────────────
   try {
     await runAskPipeline({
       tenantId: auth.tenantId,
@@ -175,7 +219,7 @@ conversationsRouter.post("/:id/messages", async (req: Request, res: Response) =>
   } catch (err) {
     // Pipeline errors are handled internally (always emits error/done).
     // This catch is a safety net for unexpected throws.
-    logger.error(err, "conversations POST /:id/messages unhandled pipeline error");
+    logger.error({ err }, "conversations POST /:id/messages unhandled pipeline error");
   } finally {
     res.end();
   }
@@ -201,7 +245,7 @@ conversationsRouter.delete("/:id", async (req: Request, res: Response) => {
     }
     res.status(204).send();
   } catch (err) {
-    logger.error(err, "conversations DELETE /:id error");
+    logger.error({ err }, "conversations DELETE /:id error");
     const body: ApiErrorResponse = { code: "INTERNAL", message: "Failed to delete conversation" };
     res.status(500).json(body);
   }

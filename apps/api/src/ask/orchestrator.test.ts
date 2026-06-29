@@ -11,7 +11,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { buildSchemaPrompt, runAskPipeline } from "./orchestrator.js";
+import { buildSchemaPrompt, runAskPipeline, LlmClarificationError } from "./orchestrator.js";
 import { MockLlmProvider } from "../llm/mock-provider.js";
 import type { ResourceGrantSet } from "@bi/contracts";
 import type { ResultEnvelope } from "@bi/contracts";
@@ -268,7 +268,8 @@ describe("runAskPipeline — success", () => {
       text: "q", llm, send, signal: new AbortController().signal,
     });
     // Give fire-and-forget persist time to settle
-    await new Promise((r) => setTimeout(r, 10));
+    // Flush microtasks for fire-and-forget promises in the finally block
+    for (let i = 0; i < 5; i++) await Promise.resolve();
     expect(mockAddMessage).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
@@ -285,7 +286,8 @@ describe("runAskPipeline — success", () => {
       tenantId: "t1", userId: "u1", roleId: "role-1", conversationId: "conv-1",
       text: "q", llm, send, signal: new AbortController().signal,
     });
-    await new Promise((r) => setTimeout(r, 10));
+    // Flush microtasks for fire-and-forget promises in the finally block
+    for (let i = 0; i < 5; i++) await Promise.resolve();
     expect(mockEmitAuditEvent).toHaveBeenCalledWith(
       expect.objectContaining({
         type: "query_executed",
@@ -397,7 +399,8 @@ describe("runAskPipeline — permission block", () => {
       tenantId: "t1", userId: "u1", roleId: "role-1", conversationId: "conv-1",
       text: "Show secrets", llm, send, signal: new AbortController().signal,
     });
-    await new Promise((r) => setTimeout(r, 10));
+    // Flush microtasks for fire-and-forget promises in the finally block
+    for (let i = 0; i < 5; i++) await Promise.resolve();
     expect(mockEmitAuditEvent).toHaveBeenCalledWith(
       expect.objectContaining({ type: "query_blocked", outcome: "blocked" }),
     );
@@ -484,7 +487,8 @@ describe("runAskPipeline — validation failure", () => {
       tenantId: "t1", userId: "u1", roleId: "role-1", conversationId: "conv-1",
       text: "q", llm, send, signal: new AbortController().signal,
     });
-    await new Promise((r) => setTimeout(r, 10));
+    // Flush microtasks for fire-and-forget promises in the finally block
+    for (let i = 0; i < 5; i++) await Promise.resolve();
     expect(mockEmitAuditEvent).toHaveBeenCalledWith(
       expect.objectContaining({ type: "query_validation_failed", outcome: "error" }),
     );
@@ -577,6 +581,105 @@ describe("runAskPipeline — LLM error", () => {
     // A terminal event must always be emitted
     const terminals = names.filter((n) => n === "done" || n === "error");
     expect(terminals).toHaveLength(1);
+  });
+
+  it("LLM error with known code (LLM_ERROR) propagates correctly", async () => {
+    const llm = new MockLlmProvider();
+    llm.queryError = Object.assign(new Error("model overloaded"), { code: "LLM_ERROR" });
+
+    const { events, send } = captureSend();
+    await runAskPipeline({
+      tenantId: "t1", userId: "u1", roleId: "role-1", conversationId: "conv-1",
+      text: "q", llm, send, signal: new AbortController().signal,
+    });
+    const errEvent = events.find((e) => e.event === "error")!;
+    expect(errEvent.data).toMatchObject({ code: "LLM_ERROR" });
+  });
+
+  it("rate-limit error propagates RATE_LIMIT code", async () => {
+    const llm = new MockLlmProvider();
+    llm.queryError = Object.assign(new Error("rate limited"), { code: "RATE_LIMIT" });
+
+    const { events, send } = captureSend();
+    await runAskPipeline({
+      tenantId: "t1", userId: "u1", roleId: "role-1", conversationId: "conv-1",
+      text: "q", llm, send, signal: new AbortController().signal,
+    });
+    const errEvent = events.find((e) => e.event === "error")!;
+    expect(errEvent.data).toMatchObject({ code: "RATE_LIMIT" });
+  });
+});
+
+// ── runAskPipeline: clarification branch ──────────────────────────────────────
+
+describe("runAskPipeline — clarification", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockGetHistoryWindow.mockResolvedValue([]);
+    setupDefaultMockTx();
+  });
+
+  it("emits error with CLARIFICATION code when LlmClarificationError is thrown", async () => {
+    const llm = new MockLlmProvider();
+    llm.queryError = new LlmClarificationError("Could you specify the time period?");
+
+    const { events, send } = captureSend();
+    await runAskPipeline({
+      tenantId: "t1", userId: "u1", roleId: "role-1", conversationId: "conv-1",
+      text: "Show me sales", llm, send, signal: new AbortController().signal,
+    });
+
+    const errEvent = events.find((e) => e.event === "error")!;
+    expect(errEvent).toBeDefined();
+    expect(errEvent.data).toMatchObject({
+      code: "CLARIFICATION",
+      message: "Could you specify the time period?",
+    });
+  });
+
+  it("clarification: exactly one terminal event emitted", async () => {
+    const llm = new MockLlmProvider();
+    llm.queryError = new LlmClarificationError("Need more context.");
+
+    const { events, send } = captureSend();
+    await runAskPipeline({
+      tenantId: "t1", userId: "u1", roleId: "role-1", conversationId: "conv-1",
+      text: "q", llm, send, signal: new AbortController().signal,
+    });
+
+    const terminals = events.filter((e) => e.event === "done" || e.event === "error");
+    expect(terminals).toHaveLength(1);
+    expect(terminals[0].event).toBe("error");
+  });
+
+  it("clarification: does not execute proxy", async () => {
+    const llm = new MockLlmProvider();
+    llm.queryError = new LlmClarificationError("Ambiguous question.");
+
+    const { send } = captureSend();
+    await runAskPipeline({
+      tenantId: "t1", userId: "u1", roleId: "role-1", conversationId: "conv-1",
+      text: "q", llm, send, signal: new AbortController().signal,
+    });
+
+    expect(mockProxyExecute).not.toHaveBeenCalled();
+  });
+
+  it("clarification: audit event is emitted with error outcome", async () => {
+    const llm = new MockLlmProvider();
+    llm.queryError = new LlmClarificationError("Need clarification.");
+
+    const { send } = captureSend();
+    await runAskPipeline({
+      tenantId: "t1", userId: "u1", roleId: "role-1", conversationId: "conv-1",
+      text: "q", llm, send, signal: new AbortController().signal,
+    });
+    // Flush fire-and-forget audit emit
+    for (let i = 0; i < 5; i++) await Promise.resolve();
+
+    expect(mockEmitAuditEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: "error", actorUserId: "u1" }),
+    );
   });
 });
 
