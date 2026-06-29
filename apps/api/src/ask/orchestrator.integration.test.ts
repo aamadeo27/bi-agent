@@ -388,22 +388,32 @@ describe.skipIf(SKIP)("runAskPipeline — Testcontainers integration", () => {
 
   // ── 4. Validation fail ────────────────────────────────────────────────────
   //
-  // Use DML (UPDATE / INSERT) rather than DDL or multi-statement:
-  //   - DML is unambiguously parseable by node-sql-parser → gate can extract
-  //     referenced tables → public.sales is granted → gate allows.
-  //   - Validator rejects non-SELECT verbs → VALIDATION error.
-  //   - Avoids the gate's parse-failure path (which emits `block`, not `error`).
+  // Use an over-length SELECT (not DML) to trigger validator rejection.
+  //
+  // Rationale: the permission gate calls astify/tableList/columnList in a single
+  // try block.  Some node-sql-parser versions throw for DML statements in at least
+  // one of those three calls.  A throw in the gate is caught and returns
+  // { allow: false, missing: [] } → the pipeline emits a `block` event, never
+  // reaching the validator.  The test would then incorrectly fail.
+  //
+  // A SELECT query on a granted table avoids that: the gate parses it cleanly and
+  // returns allow:true.  Making the query exceed DEFAULT_MAX_QUERY_LENGTH (8 000)
+  // guarantees the validator rejects it at step 1 — before any AST parsing —
+  // with code VALIDATION.  No proxy is called.
 
-  it("validation-fail — DML (UPDATE) rejected by validator; VALIDATION code; no proxy", async () => {
+  it("validation-fail — query exceeds length limit; VALIDATION code; no proxy", async () => {
     setupWithTenantMock({ grantRows: [salesGrant()], encryptedCred: null });
 
-    // UPDATE public.sales: gate allows (table granted), validator rejects (DML)
-    const llm = makeMockLlm({ query: "UPDATE public.sales SET total = 0 WHERE region = 'North'" });
+    // SELECT on public.sales (gate allows) but 8 001 chars total (validator rejects at step 1).
+    const longQuery =
+      `SELECT region, total FROM public.sales WHERE region = '${"N".repeat(7944)}'`;
+    // length: 56 + 7944 + 1 = 8001 > 8000
+    const llm = makeMockLlm({ query: longQuery });
     const { events, send } = captureSend();
 
     await runAskPipeline({
       tenantId: TENANT_ID, userId: USER_ID, roleId: ROLE_ID,
-      conversationId: CONV_ID, text: "Set all sales to zero",
+      conversationId: CONV_ID, text: "Over-length query test",
       llm, send, signal: new AbortController().signal,
     });
 
@@ -416,24 +426,27 @@ describe.skipIf(SKIP)("runAskPipeline — Testcontainers integration", () => {
     expect(eventNames).not.toContain("block");
   }, 30_000);
 
-  it("validation-fail — DML (INSERT) rejected by validator; VALIDATION code; no proxy", async () => {
+  it("validation-fail — second over-length query; VALIDATION code; no proxy", async () => {
     setupWithTenantMock({ grantRows: [salesGrant()], encryptedCred: null });
 
-    // INSERT INTO public.sales: gate allows (table granted), validator rejects (DML)
-    const llm = makeMockLlm({
-      query: "INSERT INTO public.sales (region, total) VALUES ('East', 999)",
-    });
+    // Different long SELECT to confirm the rejection path is stable across calls.
+    const longQuery2 =
+      `SELECT total FROM public.sales WHERE total > 0 AND region = '${"S".repeat(7939)}'`;
+    // length: 61 + 7939 + 1 = 8001 > 8000
+    const llm = makeMockLlm({ query: longQuery2 });
     const { events, send } = captureSend();
 
     await runAskPipeline({
       tenantId: TENANT_ID, userId: USER_ID, roleId: ROLE_ID,
-      conversationId: CONV_ID, text: "Add a new sales row",
+      conversationId: CONV_ID, text: "Second over-length query",
       llm, send, signal: new AbortController().signal,
     });
 
     const errEvt = events.find((e) => e.event === "error")!;
+    expect(errEvt).toBeDefined();
     expect((errEvt.data as { code: string }).code).toBe("VALIDATION");
     expect(events.map((e) => e.event)).not.toContain("result");
+    expect(events.map((e) => e.event)).not.toContain("block");
   }, 30_000);
 
   // ── 5. Data-source error ──────────────────────────────────────────────────
