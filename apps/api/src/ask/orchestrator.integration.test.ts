@@ -388,26 +388,34 @@ describe.skipIf(SKIP)("runAskPipeline — Testcontainers integration", () => {
 
   // ── 4. Validation fail ────────────────────────────────────────────────────
   //
-  // Use an over-length SELECT (not DML) to trigger validator rejection.
+  // Use a comment-padded SELECT to trigger validator length rejection.
   //
-  // Rationale: the permission gate calls astify/tableList/columnList in a single
-  // try block.  Some node-sql-parser versions throw for DML statements in at least
-  // one of those three calls.  A throw in the gate is caught and returns
-  // { allow: false, missing: [] } → the pipeline emits a `block` event, never
-  // reaching the validator.  The test would then incorrectly fail.
+  // Why comment-padding instead of DML or a long string literal:
   //
-  // A SELECT query on a granted table avoids that: the gate parses it cleanly and
-  // returns allow:true.  Making the query exceed DEFAULT_MAX_QUERY_LENGTH (8 000)
-  // guarantees the validator rejects it at step 1 — before any AST parsing —
-  // with code VALIDATION.  No proxy is called.
+  //  • DML (UPDATE/INSERT): node-sql-parser may throw inside the gate's try block
+  //    (on tableList/columnList for DML) → gate fails closed → `block` event,
+  //    never reaching the validator.
+  //
+  //  • Long string literal: length calculation is fragile (off-by-one gives
+  //    exactly-8000 chars which does NOT satisfy `sql.length > 8000`), and
+  //    parsing a query with a 7 000+ char literal may be slow or throw.
+  //
+  //  • Comment-padded SELECT (chosen): node-sql-parser strips line comments before
+  //    parsing, so the gate only parses the short base SELECT (≤35 chars) and
+  //    succeeds cleanly.  The validator checks `sql.length` on the raw string
+  //    (with comment) at step 1, before any AST work — so it rejects immediately
+  //    with code VALIDATION.  The proxy is never called.
+  //
+  // Prefix lengths (verified character by character):
+  //   "SELECT region FROM public.sales -- " = 35 chars
+  //   "SELECT total  FROM public.sales -- " = 35 chars (different alias)
 
   it("validation-fail — query exceeds length limit; VALIDATION code; no proxy", async () => {
     setupWithTenantMock({ grantRows: [salesGrant()], encryptedCred: null });
 
-    // SELECT on public.sales (gate allows) but 8 001 chars total (validator rejects at step 1).
-    const longQuery =
-      `SELECT region, total FROM public.sales WHERE region = '${"N".repeat(7944)}'`;
-    // length: 56 + 7944 + 1 = 8001 > 8000
+    // Raw length: 35 + 7966 = 8001 > 8000.
+    // Gate parses only "SELECT region FROM public.sales" (comment stripped).
+    const longQuery = `SELECT region FROM public.sales -- ${"A".repeat(7966)}`;
     const llm = makeMockLlm({ query: longQuery });
     const { events, send } = captureSend();
 
@@ -429,10 +437,8 @@ describe.skipIf(SKIP)("runAskPipeline — Testcontainers integration", () => {
   it("validation-fail — second over-length query; VALIDATION code; no proxy", async () => {
     setupWithTenantMock({ grantRows: [salesGrant()], encryptedCred: null });
 
-    // Different long SELECT to confirm the rejection path is stable across calls.
-    const longQuery2 =
-      `SELECT total FROM public.sales WHERE total > 0 AND region = '${"S".repeat(7939)}'`;
-    // length: 61 + 7939 + 1 = 8001 > 8000
+    // Raw length: 35 + 7966 = 8001 > 8000 (different columns/alias, same pattern).
+    const longQuery2 = `SELECT total  FROM public.sales -- ${"B".repeat(7966)}`;
     const llm = makeMockLlm({ query: longQuery2 });
     const { events, send } = captureSend();
 
