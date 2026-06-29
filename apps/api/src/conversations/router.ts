@@ -52,6 +52,38 @@ export function _resetLlmProvider(): void {
   _llmProvider = undefined;
 }
 
+// ── Ask SSE rate limiter ──────────────────────────────────────────────────────
+//
+// Sliding-window counter (in-memory, per-user) to prevent a single authenticated
+// user from looping paid LLM + data-plane calls (CWE-770, OWASP API4:2023).
+// Configurable via env; defaults protect against runaway loops without blocking
+// normal interactive use.
+
+const ASK_RATE_LIMIT_MAX = Number(process.env["ASK_RATE_LIMIT_MAX"] ?? "20");
+const ASK_RATE_LIMIT_WINDOW_MS = Number(process.env["ASK_RATE_LIMIT_WINDOW_MS"] ?? "60000");
+
+/** Map: userId → sorted list of request timestamps within the current window. */
+const _askRateLimitBuckets = new Map<string, number[]>();
+
+/** Returns true when the request is allowed; false when the user is over-limit. */
+function checkAskRateLimit(userId: string): boolean {
+  const now = Date.now();
+  const cutoff = now - ASK_RATE_LIMIT_WINDOW_MS;
+  const bucket = (_askRateLimitBuckets.get(userId) ?? []).filter((t) => t > cutoff);
+  if (bucket.length >= ASK_RATE_LIMIT_MAX) {
+    _askRateLimitBuckets.set(userId, bucket);
+    return false;
+  }
+  bucket.push(now);
+  _askRateLimitBuckets.set(userId, bucket);
+  return true;
+}
+
+/** Clear rate-limit state for a user — for use in tests only. */
+export function _clearAskRateLimitForUser(userId: string): void {
+  _askRateLimitBuckets.delete(userId);
+}
+
 export const conversationsRouter: ExpressRouter = Router();
 
 // ── GET /api/conversations ────────────────────────────────────────────────────
@@ -159,7 +191,14 @@ conversationsRouter.post("/:id/messages", async (req: Request, res: Response) =>
     return;
   }
 
-  // ── 5. Verify conversation ownership (before SSE headers, so 404 is possible) ──
+  // ── 5. Rate limit (per user, sliding window) ────────────────────────────────
+  if (!checkAskRateLimit(auth.userId)) {
+    const body: ApiErrorResponse = { code: "RATE_LIMIT", message: "Too many requests — please wait before asking again" };
+    res.status(429).json(body);
+    return;
+  }
+
+  // ── 6. Verify conversation ownership (before SSE headers, so 404 is possible) ──
   try {
     const conv = await req.withTenantTx((tx) =>
       getConversation(tx, conversationId, auth.userId),
@@ -176,7 +215,7 @@ conversationsRouter.post("/:id/messages", async (req: Request, res: Response) =>
     return;
   }
 
-  // ── 6. Open SSE stream ──────────────────────────────────────────────────────
+  // ── 7. Open SSE stream ──────────────────────────────────────────────────────
   res.status(200).set({
     "Content-Type": "text/event-stream",
     "Cache-Control": "no-cache, no-transform",
@@ -203,7 +242,7 @@ conversationsRouter.post("/:id/messages", async (req: Request, res: Response) =>
     }
   };
 
-  // ── 7. Run pipeline ─────────────────────────────────────────────────────────
+  // ── 8. Run pipeline ─────────────────────────────────────────────────────────
   try {
     await runAskPipeline({
       tenantId: auth.tenantId,

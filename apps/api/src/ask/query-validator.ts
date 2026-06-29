@@ -125,6 +125,12 @@ export interface ValidatorOptions {
   maxRowLimit?: number;
   /** Connector's declared REST endpoints (required when validating REST queries). */
   restEndpoints?: EndpointDecl[];
+  /**
+   * Pre-parsed AST from the permission gate (same SQL, same dialect).
+   * When provided, the validator skips its own `astify` call to avoid a
+   * redundant parse pass on the hot path.
+   */
+  precomputedAst?: unknown;
 }
 
 // ── Internal AST type alias ────────────────────────────────────────────────────
@@ -411,9 +417,9 @@ function parseRestCall(raw: string): ParsedRestCall | null {
 
 function validateSqlQuery(
   sql: string,
-  opts: { dialect: Dialect; maxQueryLength: number; maxRowLimit: number },
+  opts: { dialect: Dialect; maxQueryLength: number; maxRowLimit: number; precomputedAst?: unknown },
 ): ValidationResult {
-  const { dialect, maxQueryLength, maxRowLimit } = opts;
+  const { dialect, maxQueryLength, maxRowLimit, precomputedAst } = opts;
 
   // 1. Length cap.
   if (sql.length > maxQueryLength) {
@@ -455,14 +461,18 @@ function validateSqlQuery(
     }
   }
 
-  // 5. Parse into AST.
+  // 5. Parse into AST (or reuse pre-parsed AST from the permission gate to skip re-parse).
   const dbOpt = dialectToDb(dialect);
   const parser = new Parser();
   let ast: unknown;
-  try {
-    ast = parser.astify(trimmed, { database: dbOpt });
-  } catch (err) {
-    return fail(`SQL parse error: ${(err as Error).message}`);
+  if (precomputedAst !== undefined) {
+    ast = precomputedAst;
+  } else {
+    try {
+      ast = parser.astify(trimmed, { database: dbOpt });
+    } catch (err) {
+      return fail(`SQL parse error: ${(err as Error).message}`);
+    }
   }
 
   // 6. Multi-statement check via AST (parser may return an array).
@@ -593,11 +603,12 @@ export function validateQuery(
     maxQueryLength = DEFAULT_MAX_QUERY_LENGTH,
     maxRowLimit = DEFAULT_MAX_ROW_LIMIT,
     restEndpoints = [],
+    precomputedAst,
   } = opts;
 
   if (query.queryType === "rest") {
     return validateRestQuery(query.sql, restEndpoints);
   }
 
-  return validateSqlQuery(query.sql, { dialect, maxQueryLength, maxRowLimit });
+  return validateSqlQuery(query.sql, { dialect, maxQueryLength, maxRowLimit, precomputedAst });
 }

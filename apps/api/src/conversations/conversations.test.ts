@@ -340,24 +340,24 @@ describe("getHistoryWindow", () => {
   }
 
   it("returns all messages when budget is large enough", async () => {
-    const convRow = makeConvRow({ id: "c1", user_id: "u1" });
     const msgRows = buildMessages(["Hello", "World", "Foo"]);
-    const tx = buildMockTx([[convRow], msgRows]);
+    const tx = buildMockTx([msgRows]);
     const result = await getHistoryWindow(tx, "c1", "u1", 10_000);
     expect(result).toHaveLength(3);
   });
 
-  it("returns empty when conversation not found (wrong user)", async () => {
-    const tx = buildMockTx([[]]); // ownership check fails
-    const result = await getHistoryWindow(tx, "c1", "wrong-user", 10_000);
+  it("returns empty when conversation has no messages", async () => {
+    // getHistoryWindow no longer does an ownership round-trip; caller is trusted.
+    // An empty message set (e.g. new conversation or unknown id) returns [].
+    const tx = buildMockTx([[]]);
+    const result = await getHistoryWindow(tx, "c1", "u1", 10_000);
     expect(result).toEqual([]);
   });
 
   it("truncates oldest messages to fit budget", async () => {
-    const convRow = makeConvRow({ id: "c1", user_id: "u1" });
     // 3 messages, each 4 chars = 1 token each → budget of 2 keeps last 2
     const msgRows = buildMessages(["aaaa", "bbbb", "cccc"]);
-    const tx = buildMockTx([[convRow], msgRows]);
+    const tx = buildMockTx([msgRows]);
     const result = await getHistoryWindow(tx, "c1", "u1", 2);
     expect(result).toHaveLength(2);
     expect(result[0].content).toBe("bbbb");
@@ -365,30 +365,27 @@ describe("getHistoryWindow", () => {
   });
 
   it("returns empty when budget is 0", async () => {
-    const convRow = makeConvRow({ id: "c1", user_id: "u1" });
     const msgRows = buildMessages(["hello"]);
-    const tx = buildMockTx([[convRow], msgRows]);
+    const tx = buildMockTx([msgRows]);
     const result = await getHistoryWindow(tx, "c1", "u1", 0);
     expect(result).toEqual([]);
   });
 
   it("preserves chronological order (oldest first) in returned window", async () => {
-    const convRow = makeConvRow({ id: "c1", user_id: "u1" });
     // budget of 2 tokens → last 2 of 3
     const msgRows = buildMessages(["aaaa", "bbbb", "cccc"]);
-    const tx = buildMockTx([[convRow], msgRows]);
+    const tx = buildMockTx([msgRows]);
     const result = await getHistoryWindow(tx, "c1", "u1", 2);
     expect(result[0].content).toBe("bbbb");
     expect(result[1].content).toBe("cccc");
   });
 
   it("stops accumulating when a single message exceeds remaining budget", async () => {
-    const convRow = makeConvRow({ id: "c1", user_id: "u1" });
     // 3 messages: costs 2, 2, 2 tokens. Budget = 3 → only last 1 (cost=2) fits? No...
     // "abcdefgh" = 8 chars = 2 tokens. Budget=3 → can fit 1 (2 tokens used, 1 remaining)
     // then next from the back: another 8 chars = 2 tokens, 1 remaining < 2 → stop
     const msgRows = buildMessages(["abcdefgh", "abcdefgh", "abcdefgh"]);
-    const tx = buildMockTx([[convRow], msgRows]);
+    const tx = buildMockTx([msgRows]);
     const result = await getHistoryWindow(tx, "c1", "u1", 3);
     expect(result).toHaveLength(1);
     expect(result[0].content).toBe("abcdefgh");

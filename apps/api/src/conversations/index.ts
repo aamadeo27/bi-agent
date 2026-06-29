@@ -55,6 +55,15 @@ interface MessageRow {
   created_at: Date;
 }
 
+/** Lean row for history windowing — omits heavy JSONB columns. */
+interface HistoryRow {
+  id: string;
+  conversation_id: string;
+  role: string;
+  content: string;
+  created_at: Date;
+}
+
 // ---------------------------------------------------------------------------
 // Mappers
 // ---------------------------------------------------------------------------
@@ -77,6 +86,21 @@ function mapMessageRow(row: MessageRow): Message {
     generatedQuery: row.generated_query ?? null,
     resultEnvelope: row.result_envelope ? (row.result_envelope as ResultEnvelope) : null,
     dataSourceId: row.data_source_id ?? null,
+    createdAt: row.created_at.toISOString(),
+  };
+}
+
+/** Maps a lean history row — fills optional fields with null to satisfy Message type. */
+function mapHistoryRow(row: HistoryRow): Message {
+  return {
+    id: row.id,
+    conversationId: row.conversation_id,
+    role: row.role as MessageRole,
+    content: row.content,
+    queryType: null,
+    generatedQuery: null,
+    resultEnvelope: null,
+    dataSourceId: null,
     createdAt: row.created_at.toISOString(),
   };
 }
@@ -228,19 +252,41 @@ export function estimateTokens(text: string): number {
 }
 
 /**
+ * Internal lean fetch for history windowing.
+ * Skips ownership check (caller must verify) and omits result_envelope /
+ * generated_query to avoid transferring up to 2 000-row JSONB blobs per message.
+ */
+async function getMessagesForHistory(
+  tx: Prisma.TransactionClient,
+  conversationId: string,
+): Promise<Message[]> {
+  const rows = await tx.$queryRawUnsafe<HistoryRow[]>(
+    `SELECT id, conversation_id, role, content, created_at
+     FROM messages
+     WHERE conversation_id = $1
+     ORDER BY created_at ASC`,
+    conversationId,
+  );
+  return rows.map(mapHistoryRow);
+}
+
+/**
  * Returns recent messages from `conversationId` that fit within `budget` tokens,
  * ordered chronologically (oldest-first), keeping as many recent messages as possible.
  *
  * Used by the orchestrator to build LLM context windows.
+ * Ownership must be verified by the caller before invoking (the SSE route already
+ * checks it, and withTenant enforces tenant isolation).
  */
 export async function getHistoryWindow(
   tx: Prisma.TransactionClient,
   conversationId: string,
-  userId: string,
+  _userId: string,
   budget: number,
 ): Promise<Message[]> {
-  const all = await getMessages(tx, conversationId, userId);
-  if (!all) return [];
+  // Use lean internal query — no ownership round-trip, no heavy JSONB columns.
+  const all = await getMessagesForHistory(tx, conversationId);
+  if (!all.length) return [];
 
   // Walk from newest to oldest, accumulate until budget exhausted
   let remaining = budget;
