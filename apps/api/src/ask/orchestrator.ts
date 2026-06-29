@@ -485,6 +485,7 @@ export async function runAskPipeline(args: OrchestratorArgs): Promise<void> {
         content: assistantContent,
         ...(generatedQueryText !== null ? { generatedQuery: generatedQueryText } : {}),
         ...(resultEnvelope !== null ? { resultEnvelope, queryType: resultEnvelope.queryType } : {}),
+        ...(auditDataSourceId !== undefined ? { dataSourceId: auditDataSourceId } : {}),
       }),
     ).catch((err) => {
       logger.error({ err }, "orchestrator: failed to persist assistant message");

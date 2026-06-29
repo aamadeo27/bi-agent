@@ -11,6 +11,7 @@ import { authRouter } from "./auth/router.js";
 import { adminUsersRouter } from "./admin/users-router.js";
 import { rolesRouter, requireAdminCapability, schemaRouter, dataSourcesRouter } from "./admin/index.js";
 import { conversationsRouter } from "./conversations/router.js";
+import { messagesRouter } from "./messages/router.js";
 import { startRetentionScheduler } from "./conversations/retention-scheduler.js";
 
 // Initialize the dev-only error-tracking sink. No-ops gracefully when
@@ -46,6 +47,7 @@ protectedRouter.use("/admin/roles", requireAdminCapability, rolesRouter);
 protectedRouter.use("/admin/schema", requireAdminCapability, schemaRouter);
 protectedRouter.use("/admin/data-sources", requireAdminCapability, dataSourcesRouter);
 protectedRouter.use("/conversations", conversationsRouter);
+protectedRouter.use("/messages", messagesRouter);
 
 app.use("/api", protectedRouter);
 

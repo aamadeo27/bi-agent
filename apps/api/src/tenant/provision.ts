@@ -177,6 +177,9 @@ export async function provisionTenant(
       await tx.$executeRawUnsafe(
         `ALTER TABLE "${s}"."messages" ADD COLUMN IF NOT EXISTS "result_envelope" JSONB`
       );
+      await tx.$executeRawUnsafe(
+        `ALTER TABLE "${s}"."messages" ADD COLUMN IF NOT EXISTS "data_source_id" TEXT`
+      );
 
       // Audit events — immutable log; no FK to keep insert fast under load
       await tx.$executeRawUnsafe(`

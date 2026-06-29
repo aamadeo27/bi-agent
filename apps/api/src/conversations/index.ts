@@ -16,6 +16,7 @@ export interface Message {
   queryType: "sql" | "rest" | null;
   generatedQuery: string | null;
   resultEnvelope: ResultEnvelope | null;
+  dataSourceId: string | null;
   createdAt: string; // ISO-8601
 }
 
@@ -27,6 +28,7 @@ export interface CreateMessageInput {
   queryType?: "sql" | "rest";
   generatedQuery?: string;
   resultEnvelope?: ResultEnvelope;
+  dataSourceId?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -49,6 +51,7 @@ interface MessageRow {
   query_type: string | null;
   generated_query: string | null;
   result_envelope: unknown;
+  data_source_id: string | null;
   created_at: Date;
 }
 
@@ -73,6 +76,7 @@ function mapMessageRow(row: MessageRow): Message {
     queryType: (row.query_type as "sql" | "rest" | null) ?? null,
     generatedQuery: row.generated_query ?? null,
     resultEnvelope: row.result_envelope ? (row.result_envelope as ResultEnvelope) : null,
+    dataSourceId: row.data_source_id ?? null,
     createdAt: row.created_at.toISOString(),
   };
 }
@@ -139,7 +143,7 @@ export async function getMessages(
   if (!conv) return null;
 
   const rows = await tx.$queryRawUnsafe<MessageRow[]>(
-    `SELECT id, conversation_id, role, content, query_type, generated_query, result_envelope, created_at
+    `SELECT id, conversation_id, role, content, query_type, generated_query, result_envelope, data_source_id, created_at
      FROM messages
      WHERE conversation_id = $1
      ORDER BY created_at ASC`,
@@ -175,9 +179,9 @@ export async function addMessage(
   const resultEnvelopeJson = input.resultEnvelope ? JSON.stringify(input.resultEnvelope) : null;
 
   const rows = await tx.$queryRawUnsafe<MessageRow[]>(
-    `INSERT INTO messages (id, conversation_id, role, content, query_type, generated_query, result_envelope, created_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, NOW())
-     RETURNING id, conversation_id, role, content, query_type, generated_query, result_envelope, created_at`,
+    `INSERT INTO messages (id, conversation_id, role, content, query_type, generated_query, result_envelope, data_source_id, created_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, NOW())
+     RETURNING id, conversation_id, role, content, query_type, generated_query, result_envelope, data_source_id, created_at`,
     input.id,
     input.conversationId,
     input.role,
@@ -185,6 +189,7 @@ export async function addMessage(
     input.queryType ?? null,
     input.generatedQuery ?? null,
     resultEnvelopeJson,
+    input.dataSourceId ?? null,
   );
 
   // Update conversation updated_at, and title if this is the first user message

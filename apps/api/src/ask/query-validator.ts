@@ -21,6 +21,7 @@
  */
 
 import { Parser, type AST } from "node-sql-parser";
+import { logger } from "../observability/logger.js";
 import type { GeneratedQuery, Dialect } from "./permission-gate.js";
 import type { EndpointDecl } from "../datasource/rest-connector.js";
 
@@ -515,9 +516,9 @@ function validateSqlQuery(
   } catch (sqlifyErr) {
     // sqlify failure is non-fatal: the AST-validated SQL is still safe to use.
     // Log so parameterization fallbacks are observable in production.
-    console.warn(
-      "[query-validator] sqlify failed during parameterization; returning original validated SQL",
+    logger.warn(
       { error: (sqlifyErr as Error).message },
+      "[query-validator] sqlify failed during parameterization; returning original validated SQL",
     );
     finalSql = trimmed;
     params.length = 0;
