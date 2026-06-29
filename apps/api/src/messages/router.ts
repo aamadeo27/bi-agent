@@ -16,7 +16,7 @@ interface QueryMessageRow {
   id: string;
   query_type: string;
   generated_query: string;
-  result_envelope: { rowCount: number } | null;
+  row_count: number | null;
   data_source_name: string | null;
   created_at: Date;
 }
@@ -82,7 +82,7 @@ messagesRouter.get("/:id/query", async (req: Request, res: Response) => {
            m.id,
            m.query_type,
            m.generated_query,
-           m.result_envelope,
+           (m.result_envelope->>'rowCount')::int AS row_count,
            m.created_at,
            ds.name AS data_source_name
          FROM messages m
@@ -113,7 +113,7 @@ messagesRouter.get("/:id/query", async (req: Request, res: Response) => {
           // (query is executed and message is persisted in the same pipeline step).
           // Awaiting Architect confirmation that this mapping is the intended semantic.
           executedAt: row.created_at.toISOString(),
-          rowCount: row.result_envelope?.rowCount ?? 0,
+          rowCount: row.row_count ?? 0,
         },
       };
     });
