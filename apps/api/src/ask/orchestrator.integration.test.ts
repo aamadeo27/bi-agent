@@ -100,15 +100,19 @@ function setupWithTenantMock(opts: {
 
   // Call 1: orchestrator main TX
   // Sequence: addMessage(user) → role lookup → grants → data source → getConversation → messages
+  //
+  // Data-source row: returned only when there are grants (empty grants → no connected source
+  // → orchestrator throws OrchestratorError("DATA_SOURCE") before reaching the gate).
+  const dataSourceRow = grantRows.length > 0 ? [{ id: DS_ID, type: dataSourceType }] : [];
   vi.mocked(withTenant).mockImplementationOnce((_tid, fn) =>
     fn({
       $queryRawUnsafe: vi.fn()
-        .mockResolvedValueOnce([USER_MSG_ROW])                        // addMessage INSERT RETURNING
-        .mockResolvedValueOnce([{ name: "analyst" }])                 // roles WHERE id = $1
-        .mockResolvedValueOnce(grantRows)                             // resource_grants WHERE role_id = $1
-        .mockResolvedValueOnce([{ id: DS_ID, type: dataSourceType }]) // data_sources JOIN grants
-        .mockResolvedValueOnce([CONV_ROW])                            // getConversation (for history)
-        .mockResolvedValueOnce([]),                                   // messages (empty history)
+        .mockResolvedValueOnce([USER_MSG_ROW])  // addMessage INSERT RETURNING
+        .mockResolvedValueOnce([{ name: "analyst" }]) // roles WHERE id = $1
+        .mockResolvedValueOnce(grantRows)        // resource_grants WHERE role_id = $1
+        .mockResolvedValueOnce(dataSourceRow)    // data_sources JOIN grants (empty when no grants)
+        .mockResolvedValueOnce([CONV_ROW])       // getConversation (for history)
+        .mockResolvedValueOnce([]),              // messages (empty history)
       $executeRawUnsafe: vi.fn().mockResolvedValue(1), // UPDATE conversations
     } as never) as Promise<never>,
   );
