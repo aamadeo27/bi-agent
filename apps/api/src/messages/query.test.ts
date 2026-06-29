@@ -203,24 +203,58 @@ describe("GET /api/messages/:id/query", () => {
     });
   });
 
+  describe("unauthenticated", () => {
+    it("returns 401 AUTH when req.auth is absent", async () => {
+      // Build an app without attaching req.auth at all
+      const app = express();
+      app.use(express.json());
+      app.use((req, _res, next) => {
+        // deliberately do NOT set req.auth
+        req.withTenantTx = <T>(fn: (tx: Prisma.TransactionClient) => Promise<T>) =>
+          fn({
+            $queryRawUnsafe: vi.fn().mockResolvedValue([]),
+            $executeRawUnsafe: vi.fn().mockResolvedValue(0),
+          } as unknown as Prisma.TransactionClient);
+        next();
+      });
+      app.use("/api/messages", messagesRouter);
+
+      const res = await request(app).get(`/api/messages/${MSG_ID}/query`);
+
+      expect(res.status).toBe(401);
+      expect(res.body.code).toBe("AUTH");
+    });
+  });
+
   describe("tenant isolation", () => {
     it("returns 404 for a message belonging to another user's conversation", async () => {
-      // The SQL requires c.user_id = $2 (the requesting user).
-      // Messages from other users' conversations return no rows.
-      const app = buildApp(
-        INSPECT_AUTH, // userId = "u-inspect"
-        { canInspectQuery: true },
-        // Simulate: message exists but not in any conversation owned by u-inspect
-        (sql) => {
-          if (/FROM messages/i.test(sql)) return []; // ownership check fails
-          return [];
-        },
-      );
+      // Simulate: the message exists in the DB but belongs to a different user's
+      // conversation. The ownership JOIN (c.user_id = $2) returns no rows.
+      const querySpy = vi.fn<(sql: string, ...args: unknown[]) => unknown>().mockReturnValue([]);
+      const app = buildApp(INSPECT_AUTH, { canInspectQuery: true }, querySpy);
 
       const res = await request(app).get(`/api/messages/${OTHER_USER_MSG_ID}/query`);
 
       expect(res.status).toBe(404);
       expect(res.body.code).toBe("NOT_FOUND");
+    });
+
+    it("passes auth.userId as $2 in the ownership JOIN query", async () => {
+      // Verify the SQL is actually parameterised with the requesting user's id,
+      // not a value from the request path. This ensures the JOIN can't be bypassed.
+      const querySpy = vi.fn<(sql: string, ...args: unknown[]) => unknown>().mockReturnValue([]);
+      const app = buildApp(INSPECT_AUTH, { canInspectQuery: true }, querySpy);
+
+      await request(app).get(`/api/messages/${MSG_ID}/query`);
+
+      // Find the call that executes the message fetch SQL (FROM messages)
+      const msgCall = querySpy.mock.calls.find(
+        ([sql]) => typeof sql === "string" && /FROM messages/i.test(sql as string),
+      );
+      expect(msgCall).toBeDefined();
+      // $1 = messageId, $2 = auth.userId — verify ownership param is correct
+      expect(msgCall?.[1]).toBe(MSG_ID);
+      expect(msgCall?.[2]).toBe(INSPECT_AUTH.userId);
     });
 
     it("does not leak message details in the 404 response", async () => {
