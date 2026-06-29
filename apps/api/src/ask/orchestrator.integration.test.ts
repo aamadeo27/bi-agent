@@ -383,17 +383,23 @@ describe.skipIf(SKIP)("runAskPipeline — Testcontainers integration", () => {
   }, 30_000);
 
   // ── 4. Validation fail ────────────────────────────────────────────────────
+  //
+  // Use DML (UPDATE / INSERT) rather than DDL or multi-statement:
+  //   - DML is unambiguously parseable by node-sql-parser → gate can extract
+  //     referenced tables → public.sales is granted → gate allows.
+  //   - Validator rejects non-SELECT verbs → VALIDATION error.
+  //   - Avoids the gate's parse-failure path (which emits `block`, not `error`).
 
-  it("validation-fail — DDL rejected by validator; error with VALIDATION code; no proxy", async () => {
+  it("validation-fail — DML (UPDATE) rejected by validator; VALIDATION code; no proxy", async () => {
     setupWithTenantMock({ grantRows: [salesGrant()], encryptedCred: null });
 
-    // LLM produces a DROP TABLE — passes gate (table is granted) but fails validator
-    const llm = makeMockLlm({ query: "DROP TABLE public.sales" });
+    // UPDATE public.sales: gate allows (table granted), validator rejects (DML)
+    const llm = makeMockLlm({ query: "UPDATE public.sales SET total = 0 WHERE region = 'North'" });
     const { events, send } = captureSend();
 
     await runAskPipeline({
       tenantId: TENANT_ID, userId: USER_ID, roleId: ROLE_ID,
-      conversationId: CONV_ID, text: "Delete all sales",
+      conversationId: CONV_ID, text: "Set all sales to zero",
       llm, send, signal: new AbortController().signal,
     });
 
@@ -406,22 +412,24 @@ describe.skipIf(SKIP)("runAskPipeline — Testcontainers integration", () => {
     expect(eventNames).not.toContain("block");
   }, 30_000);
 
-  it("validation-fail — multi-statement query rejected; error with VALIDATION code", async () => {
+  it("validation-fail — DML (INSERT) rejected by validator; VALIDATION code; no proxy", async () => {
     setupWithTenantMock({ grantRows: [salesGrant()], encryptedCred: null });
 
+    // INSERT INTO public.sales: gate allows (table granted), validator rejects (DML)
     const llm = makeMockLlm({
-      query: "SELECT region FROM public.sales; DROP TABLE public.sales",
+      query: "INSERT INTO public.sales (region, total) VALUES ('East', 999)",
     });
     const { events, send } = captureSend();
 
     await runAskPipeline({
       tenantId: TENANT_ID, userId: USER_ID, roleId: ROLE_ID,
-      conversationId: CONV_ID, text: "Sales and then drop",
+      conversationId: CONV_ID, text: "Add a new sales row",
       llm, send, signal: new AbortController().signal,
     });
 
     const errEvt = events.find((e) => e.event === "error")!;
     expect((errEvt.data as { code: string }).code).toBe("VALIDATION");
+    expect(events.map((e) => e.event)).not.toContain("result");
   }, 30_000);
 
   // ── 5. Data-source error ──────────────────────────────────────────────────
