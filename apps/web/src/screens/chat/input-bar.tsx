@@ -72,7 +72,6 @@ export function InputBar({ value, onChange, onSend, isStreaming = false }: Input
           rows={1}
           placeholder="Ask a question about your data..."
           aria-label="Message input"
-          aria-multiline="true"
           className="flex-1 resize-none bg-transparent text-body text-neutral-900 placeholder:text-neutral-500 focus:outline-none disabled:opacity-60"
           style={{ maxHeight: `${MAX_TEXTAREA_HEIGHT}px`, overflowY: "auto" }}
         />

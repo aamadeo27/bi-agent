@@ -141,17 +141,15 @@ export function ChatPage() {
     [deleteMutation],
   );
 
-  // T6.2 wires this to SSE message submission; for now, create a conversation
-  // if none is active so the user has somewhere to type.
+  // T6.2 wires this to SSE message submission.
+  // For now: if no conversation is active, create one so navigation lands on a valid id.
+  // The message text is cleared here; T6.2 must capture it before clearing.
   const handleSend = useCallback(
-    (text: string) => {
+    (_text: string) => {
       if (!conversationId) {
-        // Create a conversation first; T6.2 will submit the message after navigation.
         createMutation.mutate();
       }
-      // T6.2 replaces this stub with the SSE call.
-      // eslint-disable-next-line no-console
-      console.info("[ChatPage] send stub:", text);
+      // T6.2 replaces this stub with the SSE call using `_text`.
       setInputText("");
     },
     [conversationId, createMutation],
