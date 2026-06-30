@@ -42,14 +42,6 @@ const DS_ID = "ds-test";
 
 // ── Mock DB row helpers ────────────────────────────────────────────────────────
 
-const CONV_ROW = {
-  id: CONV_ID,
-  user_id: USER_ID,
-  title: "Test",
-  created_at: new Date(),
-  updated_at: new Date(),
-};
-
 const USER_MSG_ROW = {
   id: "msg-user-1",
   conversation_id: CONV_ID,
@@ -99,7 +91,8 @@ function setupWithTenantMock(opts: {
   );
 
   // Call 1: orchestrator main TX
-  // Sequence: addMessage(user) → role lookup → grants → data source → getConversation → messages
+  // Sequence: addMessage(user) → role lookup → grants → data source → history messages
+  // Note: getHistoryWindow calls getMessagesForHistory directly (no getConversation round-trip).
   //
   // Data-source row: returned only when there are grants (empty grants → no connected source
   // → orchestrator throws OrchestratorError("DATA_SOURCE") before reaching the gate).
@@ -107,12 +100,11 @@ function setupWithTenantMock(opts: {
   vi.mocked(withTenant).mockImplementationOnce((_tid, fn) =>
     fn({
       $queryRawUnsafe: vi.fn()
-        .mockResolvedValueOnce([USER_MSG_ROW])  // addMessage INSERT RETURNING
+        .mockResolvedValueOnce([USER_MSG_ROW])       // addMessage INSERT RETURNING
         .mockResolvedValueOnce([{ name: "analyst" }]) // roles WHERE id = $1
-        .mockResolvedValueOnce(grantRows)        // resource_grants WHERE role_id = $1
-        .mockResolvedValueOnce(dataSourceRow)    // data_sources JOIN grants (empty when no grants)
-        .mockResolvedValueOnce([CONV_ROW])       // getConversation (for history)
-        .mockResolvedValueOnce([]),              // messages (empty history)
+        .mockResolvedValueOnce(grantRows)             // resource_grants WHERE role_id = $1
+        .mockResolvedValueOnce(dataSourceRow)         // data_sources JOIN grants
+        .mockResolvedValueOnce([]),                   // getMessagesForHistory (empty history)
       $executeRawUnsafe: vi.fn().mockResolvedValue(1), // UPDATE conversations
     } as never) as Promise<never>,
   );
