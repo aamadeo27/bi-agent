@@ -56,3 +56,6 @@ Thumbs.db
 # DevTeam config — not tracked per-machine
 .devteam/kkkk
 PROJECT_STATUS.md
+# generated test output
+vitest-out.txt
+test-output.txt
