@@ -166,6 +166,30 @@ describe("ConversationSidebar — delete", () => {
     fireEvent.click(deleteBtn);
     expect(props.onDelete).toHaveBeenCalledWith("c1");
   });
+
+  it("reveals delete button on mouseEnter for inactive conversation", () => {
+    renderSidebar({ activeId: undefined });
+    const li = screen.getByText("Sales by region").closest("li")!;
+    const deleteBtn = screen.getByRole("button", { name: /delete conversation: sales by region/i });
+    // Hidden before hover
+    expect(deleteBtn).toHaveClass("opacity-0");
+    fireEvent.mouseEnter(li);
+    expect(deleteBtn).not.toHaveClass("opacity-0");
+    fireEvent.mouseLeave(li);
+    expect(deleteBtn).toHaveClass("opacity-0");
+  });
+
+  it("reveals delete button on keyboard focus for inactive conversation (WCAG 2.1 AA)", () => {
+    renderSidebar({ activeId: undefined });
+    const li = screen.getByText("Sales by region").closest("li")!;
+    const deleteBtn = screen.getByRole("button", { name: /delete conversation: sales by region/i });
+    // Hidden before focus
+    expect(deleteBtn).toHaveClass("opacity-0");
+    fireEvent.focus(li);
+    expect(deleteBtn).not.toHaveClass("opacity-0");
+    fireEvent.blur(li, { relatedTarget: null });
+    expect(deleteBtn).toHaveClass("opacity-0");
+  });
 });
 
 // ─── Accessibility ────────────────────────────────────────────────────────────
@@ -174,7 +198,9 @@ describe("ConversationSidebar — axe", () => {
   it("has no critical a11y violations (default state)", async () => {
     const { container } = renderSidebar();
     const results = await axe.run(container);
-    const critical = results.violations.filter((v) => v.impact === "critical");
+    const critical = results.violations.filter(
+      (v) => v.impact === "critical" || v.impact === "serious",
+    );
     expect(
       critical,
       `Critical violations: ${JSON.stringify(critical.map((v) => v.id))}`,
@@ -184,7 +210,9 @@ describe("ConversationSidebar — axe", () => {
   it("has no critical a11y violations (loading state)", async () => {
     const { container } = renderSidebar({ isLoading: true, conversations: [] });
     const results = await axe.run(container);
-    const critical = results.violations.filter((v) => v.impact === "critical");
+    const critical = results.violations.filter(
+      (v) => v.impact === "critical" || v.impact === "serious",
+    );
     expect(
       critical,
       `Critical violations: ${JSON.stringify(critical.map((v) => v.id))}`,
@@ -194,7 +222,9 @@ describe("ConversationSidebar — axe", () => {
   it("has no critical a11y violations (active conversation)", async () => {
     const { container } = renderSidebar({ activeId: "c1" });
     const results = await axe.run(container);
-    const critical = results.violations.filter((v) => v.impact === "critical");
+    const critical = results.violations.filter(
+      (v) => v.impact === "critical" || v.impact === "serious",
+    );
     expect(
       critical,
       `Critical violations: ${JSON.stringify(critical.map((v) => v.id))}`,

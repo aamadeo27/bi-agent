@@ -152,7 +152,9 @@ describe("InputBar — axe", () => {
   it("has no critical a11y violations (idle)", async () => {
     const { container } = renderInput({ value: "" });
     const results = await axe.run(container);
-    const critical = results.violations.filter((v) => v.impact === "critical");
+    const critical = results.violations.filter(
+      (v) => v.impact === "critical" || v.impact === "serious",
+    );
     expect(
       critical,
       `Critical violations: ${JSON.stringify(critical.map((v) => v.id))}`,
@@ -162,7 +164,9 @@ describe("InputBar — axe", () => {
   it("has no critical a11y violations (with text)", async () => {
     const { container } = renderInput({ value: "Some question" });
     const results = await axe.run(container);
-    const critical = results.violations.filter((v) => v.impact === "critical");
+    const critical = results.violations.filter(
+      (v) => v.impact === "critical" || v.impact === "serious",
+    );
     expect(
       critical,
       `Critical violations: ${JSON.stringify(critical.map((v) => v.id))}`,
@@ -172,7 +176,9 @@ describe("InputBar — axe", () => {
   it("has no critical a11y violations (streaming)", async () => {
     const { container } = renderInput({ isStreaming: true });
     const results = await axe.run(container);
-    const critical = results.violations.filter((v) => v.impact === "critical");
+    const critical = results.violations.filter(
+      (v) => v.impact === "critical" || v.impact === "serious",
+    );
     expect(
       critical,
       `Critical violations: ${JSON.stringify(critical.map((v) => v.id))}`,

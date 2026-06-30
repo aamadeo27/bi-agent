@@ -67,6 +67,8 @@ export function ConversationSidebar({
   onDelete,
 }: ConversationSidebarProps) {
   const [hoveredId, setHoveredId] = useState<string | null>(null);
+  // Track keyboard focus within a list item so delete is reachable without mouse (WCAG 2.1 AA SC 2.1.1)
+  const [focusedId, setFocusedId] = useState<string | null>(null);
 
   return (
     <nav
@@ -104,7 +106,7 @@ export function ConversationSidebar({
           <ul aria-label="Past conversations">
             {conversations.map((conv) => {
               const isActive = conv.id === activeId;
-              const showDelete = hoveredId === conv.id || isActive;
+              const showDelete = hoveredId === conv.id || isActive || focusedId === conv.id;
               const displayTitle = truncateTitle(conv.title || "Untitled conversation");
 
               return (
@@ -115,6 +117,12 @@ export function ConversationSidebar({
                   }`}
                   onMouseEnter={() => setHoveredId(conv.id)}
                   onMouseLeave={() => setHoveredId(null)}
+                  onFocus={() => setFocusedId(conv.id)}
+                  onBlur={(e) => {
+                    if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+                      setFocusedId(null);
+                    }
+                  }}
                 >
                   {/* Select button */}
                   <button
@@ -128,7 +136,7 @@ export function ConversationSidebar({
                     </span>
                   </button>
 
-                  {/* Delete button — revealed on hover/active */}
+                  {/* Delete button — revealed on hover/active/keyboard-focus (WCAG 2.1 AA SC 2.1.1) */}
                   <button
                     onClick={(e) => {
                       e.stopPropagation();

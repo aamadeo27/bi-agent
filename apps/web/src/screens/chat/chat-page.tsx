@@ -113,7 +113,7 @@ export function ChatPage() {
 
   const deleteMutation = useMutation({
     mutationFn: deleteConversation,
-    onSuccess: (_void, deletedId) => {
+    onSuccess: (_, deletedId) => {
       qc.invalidateQueries({ queryKey: ["conversations"] });
       if (deletedId === conversationId) {
         navigate("/chat");
@@ -123,9 +123,10 @@ export function ChatPage() {
 
   // ─── Handlers ──────────────────────────────────────────────────────────────
 
-  const handleNew = useCallback(() => {
+  // Mutation objects change reference each render; useCallback on them is a no-op — use plain functions.
+  function handleNew() {
     createMutation.mutate();
-  }, [createMutation]);
+  }
 
   const handleSelect = useCallback(
     (id: string) => {
@@ -134,26 +135,20 @@ export function ChatPage() {
     [navigate],
   );
 
-  const handleDelete = useCallback(
-    (id: string) => {
-      deleteMutation.mutate(id);
-    },
-    [deleteMutation],
-  );
+  function handleDelete(id: string) {
+    deleteMutation.mutate(id);
+  }
 
   // T6.2 wires this to SSE message submission.
   // For now: if no conversation is active, create one so navigation lands on a valid id.
   // The message text is cleared here; T6.2 must capture it before clearing.
-  const handleSend = useCallback(
-    (_text: string) => {
-      if (!conversationId) {
-        createMutation.mutate();
-      }
-      // T6.2 replaces this stub with the SSE call using `_text`.
-      setInputText("");
-    },
-    [conversationId, createMutation],
-  );
+  function handleSend(_text: string) {
+    if (!conversationId) {
+      createMutation.mutate();
+    }
+    // T6.2 replaces this stub with the SSE call using `_text`.
+    setInputText("");
+  }
 
   const handleSignOut = useCallback(async () => {
     try {
@@ -182,6 +177,13 @@ export function ChatPage() {
     if (err?.code === "AUTH") {
       return <Navigate to="/login?reason=session_expired" replace />;
     }
+    return (
+      <div className="flex h-screen items-center justify-center bg-white" role="alert">
+        <p className="text-body text-neutral-500">
+          Failed to load workspace. Please refresh the page.
+        </p>
+      </div>
+    );
   }
 
   // ─── Render ────────────────────────────────────────────────────────────────

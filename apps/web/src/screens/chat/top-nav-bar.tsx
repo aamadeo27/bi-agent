@@ -95,10 +95,7 @@ export function TopNavBar({
     .slice(0, 2) || "?";
 
   return (
-    <header
-      className="flex h-14 flex-shrink-0 items-center gap-3 border-b border-neutral-300 bg-white px-4"
-      role="banner"
-    >
+    <header className="flex h-14 flex-shrink-0 items-center gap-3 border-b border-neutral-300 bg-white px-4">
       {/* Sidebar toggle */}
       <button
         onClick={onToggleSidebar}

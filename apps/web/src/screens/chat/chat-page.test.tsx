@@ -195,6 +195,41 @@ describe("ChatPage — delete conversation", () => {
   });
 });
 
+// ─── Delete active conversation navigates ────────────────────────────────────
+
+describe("ChatPage — delete active navigates", () => {
+  it("navigates to /chat after deleting the active conversation", async () => {
+    const user = userEvent.setup();
+    vi.mocked(getMe).mockResolvedValue(regularMe);
+    vi.mocked(listConversations).mockResolvedValue(conversations);
+    vi.mocked(deleteConversation).mockResolvedValue(undefined);
+    renderChat("/chat/c1");
+    await waitFor(() =>
+      screen.getByRole("button", { name: /delete conversation: sales by region/i }),
+    );
+    await user.click(screen.getByRole("button", { name: /delete conversation: sales by region/i }));
+    // After navigating to /chat (conversationId undefined), welcome state shows
+    await waitFor(() =>
+      expect(screen.getByRole("heading", { name: /ask your first question/i })).toBeInTheDocument(),
+    );
+  });
+});
+
+// ─── Non-AUTH error state ────────────────────────────────────────────────────
+
+describe("ChatPage — non-AUTH getMe error", () => {
+  it("shows error message for non-AUTH failure", async () => {
+    vi.mocked(getMe).mockRejectedValue({ code: "INTERNAL", message: "Server error" });
+    vi.mocked(listConversations).mockResolvedValue([]);
+    renderChat("/chat");
+    await waitFor(() =>
+      expect(
+        screen.getByText(/failed to load workspace/i),
+      ).toBeInTheDocument(),
+    );
+  });
+});
+
 // ─── Admin link ───────────────────────────────────────────────────────────────
 
 describe("ChatPage — admin link", () => {
@@ -252,7 +287,9 @@ describe("ChatPage — axe", () => {
     const { container } = renderChat("/chat");
     await waitFor(() => screen.getByRole("heading", { name: /ask your first question/i }));
     const results = await axe.run(container);
-    const critical = results.violations.filter((v) => v.impact === "critical");
+    const critical = results.violations.filter(
+      (v) => v.impact === "critical" || v.impact === "serious",
+    );
     expect(
       critical,
       `Critical violations: ${JSON.stringify(critical.map((v) => v.id))}`,
@@ -266,7 +303,9 @@ describe("ChatPage — axe", () => {
     // Title appears in both sidebar and nav bar; use getAllByText
     await waitFor(() => screen.getAllByText("Sales by region"));
     const results = await axe.run(container);
-    const critical = results.violations.filter((v) => v.impact === "critical");
+    const critical = results.violations.filter(
+      (v) => v.impact === "critical" || v.impact === "serious",
+    );
     expect(
       critical,
       `Critical violations: ${JSON.stringify(critical.map((v) => v.id))}`,

@@ -157,7 +157,9 @@ describe("TopNavBar — axe", () => {
   it("has no critical a11y violations", async () => {
     const { container } = renderNav();
     const results = await axe.run(container);
-    const critical = results.violations.filter((v) => v.impact === "critical");
+    const critical = results.violations.filter(
+      (v) => v.impact === "critical" || v.impact === "serious",
+    );
     expect(
       critical,
       `Critical violations: ${JSON.stringify(critical.map((v) => v.id))}`,
@@ -167,7 +169,9 @@ describe("TopNavBar — axe", () => {
   it("has no critical a11y violations (admin)", async () => {
     const { container } = renderNav({ isAdmin: true });
     const results = await axe.run(container);
-    const critical = results.violations.filter((v) => v.impact === "critical");
+    const critical = results.violations.filter(
+      (v) => v.impact === "critical" || v.impact === "serious",
+    );
     expect(
       critical,
       `Critical violations: ${JSON.stringify(critical.map((v) => v.id))}`,
