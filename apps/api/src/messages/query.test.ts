@@ -40,7 +40,7 @@ const FULL_MSG_ROW = {
   id: MSG_ID,
   query_type: "sql",
   generated_query: "SELECT * FROM orders",
-  result_envelope: { rowCount: 42 },
+  row_count: 42, // SQL extracts (result_envelope->>'rowCount')::int — no raw envelope in row
   data_source_name: "Production DB",
   created_at: CREATED_AT,
 };
@@ -149,7 +149,8 @@ describe("GET /api/messages/:id/query", () => {
     });
 
     it("uses rowCount=0 when result_envelope is null", async () => {
-      const rowNoEnvelope = { ...FULL_MSG_ROW, result_envelope: null };
+      // SQL extracts (result_envelope->>'rowCount')::int — NULL envelope → NULL row_count
+      const rowNoEnvelope = { ...FULL_MSG_ROW, row_count: null };
       const app = buildApp(
         INSPECT_AUTH,
         { canInspectQuery: true },

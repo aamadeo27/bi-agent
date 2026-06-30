@@ -385,7 +385,8 @@ export async function runAskPipeline(args: OrchestratorArgs): Promise<void> {
     }
 
     // ── Step 6: Query validation / injection guard ──────────────────────────────
-    const valResult = validateQuery(generatedQuery, { dialect });
+    // Pass the gate's pre-parsed AST so the validator skips a redundant parse.
+    const valResult = validateQuery(generatedQuery, { dialect, precomputedAst: gateResult.ast });
     if (!valResult.ok) {
       assistantContent = `Validation failed: ${valResult.error.message}`;
       auditType = "query_validation_failed";

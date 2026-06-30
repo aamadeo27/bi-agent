@@ -30,7 +30,7 @@ export interface ResourceRef {
 }
 
 export type GateResult =
-  | { allow: true }
+  | { allow: true; ast: unknown }
   | { allow: false; missing: ResourceRef[] };
 
 // ── Dialect mapping ────────────────────────────────────────────────────────────
@@ -266,9 +266,12 @@ export function evaluateGate(args: {
   let rawColumnList: string[];
 
   try {
-    ast = parser.astify(query.sql, opts);
-    rawTableList = parser.tableList(query.sql, opts);
-    rawColumnList = parser.columnList(query.sql, opts);
+    // Single parse pass — parser.parse() returns { ast, tableList, columnList }
+    // avoiding the 3 separate astify/tableList/columnList re-parses.
+    const parsed = parser.parse(query.sql, opts);
+    ast = parsed.ast;
+    rawTableList = parsed.tableList;
+    rawColumnList = parsed.columnList;
   } catch {
     // Parse failure → fail closed (cannot determine resource set).
     return { allow: false, missing: [] };
@@ -419,5 +422,5 @@ export function evaluateGate(args: {
   if (missing.length > 0) {
     return { allow: false, missing };
   }
-  return { allow: true };
+  return { allow: true, ast };
 }
