@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import axe from "axe-core";
 import type { ResultEnvelope } from "@bi/contracts";
 import { DataTable } from "./data-table";
 
@@ -236,5 +237,12 @@ describe("DataTable — large result / a11y", () => {
   it("does not show banner for small result", () => {
     render(<DataTable envelope={baseEnvelope} />);
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("has no critical accessibility violations", async () => {
+    const { container } = render(<DataTable envelope={baseEnvelope} />);
+    const results = await axe.run(container);
+    const critical = results.violations.filter((v) => v.impact === "critical");
+    expect(critical, "Critical a11y violations in DataTable").toHaveLength(0);
   });
 });

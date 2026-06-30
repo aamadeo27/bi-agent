@@ -6,7 +6,7 @@ export function LargeResultBanner({ rowCount }: LargeResultBannerProps) {
   return (
     <div
       role="status"
-      className="flex items-center gap-2 rounded border border-[#2563EB]/30 bg-[#2563EB]/5 px-3 py-2 text-sm text-[#2563EB]"
+      className="flex items-center gap-2 rounded border border-semantic-info/30 bg-semantic-info/5 px-3 py-2 text-sm text-semantic-info"
     >
       <svg
         className="h-4 w-4 shrink-0"

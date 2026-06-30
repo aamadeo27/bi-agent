@@ -12,3 +12,6 @@ export const CHART_PALETTE = [
 
 /** Row count above which a large-result info banner is shown (GAP-8/GAP-14 exact threshold TBD). */
 export const LARGE_RESULT_THRESHOLD = 1000;
+
+/** Max visible bars/slices before auto-downgrading to DataTable (UI/UX §11). */
+export const TOO_MANY_CATEGORIES = 20;

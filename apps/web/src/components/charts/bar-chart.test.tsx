@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
+import axe from "axe-core";
 import type { ResultEnvelope } from "@bi/contracts";
 import { BarChart } from "./bar-chart";
 
@@ -76,5 +77,24 @@ describe("BarChart", () => {
   it("does not show banner for small result", () => {
     render(<BarChart envelope={baseEnvelope} />);
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("auto-downgrades to DataTable with banner when category count >20", () => {
+    const manyRows = Array.from({ length: 21 }, (_, i) => ({
+      region: `Region${i}`,
+      revenue: i * 100,
+    }));
+    const env: ResultEnvelope = { ...baseEnvelope, rows: manyRows, rowCount: 21 };
+    render(<BarChart envelope={env} />);
+    expect(screen.getByRole("status")).toHaveTextContent(/too many categories/i);
+    expect(screen.getByRole("table")).toBeInTheDocument();
+    expect(screen.queryByTestId("recharts-bar-chart")).not.toBeInTheDocument();
+  });
+
+  it("has no critical accessibility violations", async () => {
+    const { container } = render(<BarChart envelope={baseEnvelope} />);
+    const results = await axe.run(container);
+    const critical = results.violations.filter((v) => v.impact === "critical");
+    expect(critical, "Critical a11y violations in BarChart").toHaveLength(0);
   });
 });

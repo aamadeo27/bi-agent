@@ -106,9 +106,16 @@ export function DataTable({ envelope, caption = "Query results" }: DataTableProp
             </tr>
           </thead>
           <tbody>
-            {pageRows.map((row, rowIdx) => (
+            {pageRows.map((row, rowIdx) => {
+              // Content-stable key: join all column values so React reorders DOM on sort
+              // rather than updating in-place. Disambiguate true duplicate rows with index.
+              const rowKey =
+                columns.map((col) => String(row[col.name] ?? "")).join("||") +
+                "||" +
+                rowIdx;
+              return (
               <tr
-                key={rowIdx}
+                key={rowKey}
                 className={rowIdx % 2 === 0 ? "bg-white" : "bg-neutral-100"}
               >
                 {columns.map((col) => (
@@ -120,7 +127,8 @@ export function DataTable({ envelope, caption = "Query results" }: DataTableProp
                   </td>
                 ))}
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -128,7 +136,7 @@ export function DataTable({ envelope, caption = "Query results" }: DataTableProp
       {/* Pagination bar */}
       <div className="flex items-center justify-between gap-4 px-1 text-sm text-neutral-700">
         <span>
-          Showing {firstRow}–{lastRow} of {sortedRows.length.toLocaleString()} results
+          Showing {firstRow}–{lastRow} of {rowCount.toLocaleString("en-US")} results
         </span>
         <div className="flex items-center gap-3">
           <label className="flex items-center gap-1 text-xs text-neutral-500">
@@ -136,7 +144,7 @@ export function DataTable({ envelope, caption = "Query results" }: DataTableProp
             <select
               value={pageSize}
               onChange={handlePageSizeChange}
-              className="ml-1 rounded border border-neutral-300 bg-white px-1 py-0.5 text-xs text-neutral-700 focus:outline-none focus:ring-2 focus:ring-[#3B72CC]"
+              className="ml-1 rounded border border-neutral-300 bg-white px-1 py-0.5 text-xs text-neutral-700 focus:outline-none focus:ring-2 focus:ring-primary-500"
             >
               {PAGE_SIZE_OPTIONS.map((n) => (
                 <option key={n} value={n}>
@@ -147,7 +155,7 @@ export function DataTable({ envelope, caption = "Query results" }: DataTableProp
           </label>
           <div className="flex items-center gap-1">
             <button
-              className="rounded border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-100 disabled:opacity-40 focus:outline-none focus:ring-2 focus:ring-[#3B72CC]"
+              className="rounded border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-100 disabled:opacity-40 focus:outline-none focus:ring-2 focus:ring-primary-500"
               onClick={() => setPage((p) => Math.max(0, p - 1))}
               disabled={safePage === 0}
               aria-label="Previous page"
@@ -158,7 +166,7 @@ export function DataTable({ envelope, caption = "Query results" }: DataTableProp
               {safePage + 1} / {totalPages}
             </span>
             <button
-              className="rounded border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-100 disabled:opacity-40 focus:outline-none focus:ring-2 focus:ring-[#3B72CC]"
+              className="rounded border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-100 disabled:opacity-40 focus:outline-none focus:ring-2 focus:ring-primary-500"
               onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
               disabled={safePage >= totalPages - 1}
               aria-label="Next page"

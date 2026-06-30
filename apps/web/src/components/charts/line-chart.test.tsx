@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
+import axe from "axe-core";
 import type { ResultEnvelope } from "@bi/contracts";
 import { LineChart } from "./line-chart";
 
@@ -69,5 +70,12 @@ describe("LineChart", () => {
   it("does not show banner for small result", () => {
     render(<LineChart envelope={baseEnvelope} />);
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("has no critical accessibility violations", async () => {
+    const { container } = render(<LineChart envelope={baseEnvelope} />);
+    const results = await axe.run(container);
+    const critical = results.violations.filter((v) => v.impact === "critical");
+    expect(critical, "Critical a11y violations in LineChart").toHaveLength(0);
   });
 });

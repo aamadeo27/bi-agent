@@ -1,9 +1,6 @@
 export function EmptyState() {
   return (
-    <div
-      role="status"
-      className="flex flex-col items-center justify-center h-64 gap-3 text-neutral-500"
-    >
+    <div className="flex flex-col items-center justify-center h-64 gap-3 text-neutral-500">
       <svg
         className="w-12 h-12 opacity-30"
         fill="none"

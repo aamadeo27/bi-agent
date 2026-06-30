@@ -9,10 +9,11 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import type { ResultEnvelope } from "@bi/contracts";
-import { CHART_PALETTE, LARGE_RESULT_THRESHOLD } from "./chart-palette";
+import { CHART_PALETTE, LARGE_RESULT_THRESHOLD, TOO_MANY_CATEGORIES } from "./chart-palette";
 import { formatValue, buildChartAriaLabel } from "./chart-utils";
 import { EmptyState } from "./empty-state";
 import { LargeResultBanner } from "./large-result-banner";
+import { DataTable } from "./data-table";
 
 interface BarChartProps {
   envelope: ResultEnvelope;
@@ -26,6 +27,21 @@ export function BarChart({ envelope }: BarChartProps) {
 
   if (rows.length === 0) {
     return <EmptyState />;
+  }
+
+  // §11: auto-downgrade to table when bar count exceeds readable limit
+  if (rows.length > TOO_MANY_CATEGORIES) {
+    return (
+      <div className="flex flex-col gap-2">
+        <div
+          role="status"
+          className="flex items-center gap-2 rounded border border-semantic-info/30 bg-semantic-info/5 px-3 py-2 text-sm text-semantic-info"
+        >
+          Too many categories to chart clearly. Showing as table.
+        </div>
+        <DataTable envelope={envelope} />
+      </div>
+    );
   }
 
   const showBanner = truncated || rowCount > LARGE_RESULT_THRESHOLD;

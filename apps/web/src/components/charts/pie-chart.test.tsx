@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
+import axe from "axe-core";
 import type { ResultEnvelope } from "@bi/contracts";
 import { PieChart } from "./pie-chart";
 
@@ -92,5 +93,24 @@ describe("PieChart", () => {
   it("does not show banner for small result", () => {
     render(<PieChart envelope={baseEnvelope} />);
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("auto-downgrades to DataTable with banner when slice count >20", () => {
+    const manyRows = Array.from({ length: 21 }, (_, i) => ({
+      category: `Cat${i}`,
+      amount: (i + 1) * 50,
+    }));
+    const env: ResultEnvelope = { ...baseEnvelope, rows: manyRows, rowCount: 21 };
+    render(<PieChart envelope={env} />);
+    expect(screen.getByRole("status")).toHaveTextContent(/too many categories/i);
+    expect(screen.getByRole("table")).toBeInTheDocument();
+    expect(screen.queryByTestId("recharts-pie-chart")).not.toBeInTheDocument();
+  });
+
+  it("has no critical accessibility violations", async () => {
+    const { container } = render(<PieChart envelope={baseEnvelope} />);
+    const results = await axe.run(container);
+    const critical = results.violations.filter((v) => v.impact === "critical");
+    expect(critical, "Critical a11y violations in PieChart").toHaveLength(0);
   });
 });
