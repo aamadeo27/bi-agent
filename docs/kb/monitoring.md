@@ -167,6 +167,39 @@ resolved resource set is **not** a subset of the role grants, or (b) the Query P
 - `datasource.test.count` reflects the S7 admin "test" action. Failures are an admin
   misconfiguration signal (expected, dashboarded — not paged).
 
+### 1.10 Retention purge job & query guard (epic 005)
+
+> New surface added by epic 005: a **scheduled, non-request-path** background job
+> (`conversations/retention-scheduler.ts` → `retention-purge.ts`, GAP-4 365-day purge)
+> and the **query validator / injection guard** (`ask/query-validator.ts`, NFR-SEC-3).
+> The purge job is the one piece of epic-005 surface the request-path metrics (§1.1–§1.7)
+> cannot see at all — a silent failure means data is **retained past the 365-day window**
+> (GAP-4) and audit rows past their retention (GAP-9), discovered only at audit time.
+> Instrumentation lands with the OTel/pino track; tasks in
+> `docs/epics/005-ask-pipeline/MONITORING_TASKS.md`.
+
+| Metric | Type | Labels | Source span / event |
+|--------|------|--------|---------------------|
+| `retention.purge.run.count` | counter | `outcome`(`success`\|`fatal`) | scheduler tick (`retention_purge_complete` / `retention_purge_fatal`) |
+| `retention.purge.tenants.errored.count` | counter | — | per-run `tenantsErrored` (`retention_purge_error` per tenant) |
+| `retention.purge.deleted.count` | counter | — | per-run total `deletedConversations` across tenants |
+| `retention.purge.last_success.timestamp` | gauge (unix s) | — | set on each `retention_purge_complete` with `tenantsErrored == 0` |
+| `ask.validation.reject.count` | counter | `tenant_id`, `reason`(`non_select`\|`dml`\|`ddl`\|`multi_statement`\|`row_limit`\|`too_long`\|`parse_error`) | query-validator reject (orchestrator step 5) |
+
+- **`retention.purge.last_success.timestamp` is the key purge signal.** A daily job that
+  silently stops is invisible to every request-path metric. The freshness of this gauge
+  (now − value) is what alert **A15** watches — staleness, not error volume, is the failure
+  mode that matters for a retention guarantee. Counts only; **no** conversation ids, user
+  ids, or content (standing label rules — the job already logs counts-only).
+- `retention.purge.tenants.errored.count` isolates a **single tenant** failing to purge
+  (e.g. a lock / schema drift) while the job as a whole "succeeds" → A15 P3 branch.
+- `ask.validation.reject.count` splits the existing `app.error.count{error_code=VALIDATION}`
+  (§1.4, expected class — **not** re-paged) by **reason**. `dml`/`ddl`/`multi_statement`/
+  `non_select` rejects mean the model emitted a **write/destructive/stacked** statement the
+  injection guard caught — a NFR-SEC-3 control firing. Dashboarded; a sustained spike is a
+  prompt-injection / probing trend → **A16 (P3)**. Benign `parse_error`/`too_long` are
+  noise and excluded from A16. No row literals or SQL text on the label (counts by reason).
+
 ---
 
 ## 2. SLOs / thresholds (from GAP-8 perf caps + devops SLO)
@@ -178,6 +211,7 @@ resolved resource set is **not** a subset of the role grants, or (b) the Query P
 | Result row cap honored | **≤ 10 000 rows** per query | result-envelope row count (logged); guardrail in validator | per request |
 | LLM context budget | **~8k context tokens** | `llm.context.tokens` p95 | rolling 1 h |
 | Gate bypass invariant | **0** bypass/errors | `gate.bypass.count`, `gate.error.count` | always |
+| Retention purge freshness (GAP-4) | **last clean run < 25 h old** (daily job) | `now − retention.purge.last_success.timestamp` | per eval |
 
 > "Excluding slow data sources": the e2e SLO is evaluated on
 > `ask.e2e.duration.s − ask.datasource.duration.s` where data-source time is the
@@ -202,6 +236,7 @@ on-call channel** (SLO burn / elevated failures), **P3 = ticket/daily digest**
 | **A2** | Cross-tenant access attempts | `rate(tenant.crosstenant.attempt.count)` by `tenant_id` | > 5 / 5 min from one tenant | 5 min | P2 → escalate P1 if sustained 30 min | Possible probing / broken client. Action: inspect source user, confirm middleware ignored it (it always should), check for a bug in client id handling. |
 | **A3** | Gate-block spike (single role) | `increase(gate.decision.count{outcome="block"})` by `tenant_id,role_name` | > 20 in 10 min for one role **and** > 3× that role's 7-day baseline | 10 min | P2 `#ops-pager` | Spike of blocks for one user/role = probing or a broken grant. Action: review grants vs the queries being blocked; not a failure by itself, but anomalous. |
 | **A4** | Auth failure spike | `rate(auth.login.count{outcome="failed"})` by `tenant_id` | > 10 / 5 min per tenant | 5 min | P2 `#ops-pager` | Credential stuffing / misconfigured SSO. Action: check source, consider rate-limit/lockout. |
+| **A16** | Injection-guard reject spike | `increase(ask.validation.reject.count{reason=~"non_select\|dml\|ddl\|multi_statement"})` by `tenant_id,role_name` | > 15 in 1 h for one (tenant,role) **and** > 3× that role's 7-day baseline | 1 h | P3 `#ops-digest` | The injection guard (NFR-SEC-3) keeps rejecting write/destructive/stacked statements for one role — prompt-injection steering or a broken prompt. Benign `parse_error`/`too_long` excluded. Action: review the rejected query shapes + recent prompts; not a failure by itself. |
 | **A13** | **Vault credential decrypt failure** | `increase(vault.decrypt.failure.count) > 0` | **any** (> 0) | 1 min, no recovery auto-close | **P1 — page `#sec-alerts`** | A stored credential envelope failed to decrypt. GCM auth-tag failure (`reason=crypto`) = tampering of `cred_vault_refs` at rest **or** a master-key mismatch — breaks L2 and may indicate compromise. Action: treat as incident — capture `requestId`/trace + `data_source_id`/`key_ref` (never the blob/plaintext), check KMS master-key/rotation state, verify cred-vault integrity. **Never silenced by deploy/maintenance suppression.** |
 
 ### Latency / availability (SLO)
@@ -222,6 +257,7 @@ on-call channel** (SLO burn / elevated failures), **P3 = ticket/daily digest**
 | A11 | Tenant LLM cost anomaly | `increase(llm.cost.usd[1d])` by `tenant_id` > 3× that tenant's trailing 7-day daily mean **and** > $5/day floor | trend | 1 day | P3 `#ops-digest` | Budget signal / runaway usage. Floor avoids paging on tiny absolute spikes. Action: review tenant query volume; consider per-tenant rate limit. |
 | A12 | Aborted-stream / leak | `rate(sse.stream.aborted.count{reason!="client_disconnect"})` high **or** `sse.streams.active` > N and rising for 15 min | abort > 1/min sustained, or active streams flat-high | 15 min | P3 `#ops-digest` | Back-pressure or leaked streams (client disconnects are normal and excluded). Action: check stream teardown / timeout handling. |
 | A14 | Unprovisioned data-source credential | `increase(datasource.credential.resolve.count{outcome="credential_missing"})` by `tenant_id,role_name,data_source_kind` | > 5 in 15 min for one (tenant,role,source) | 15 min | P2 `#ops-pager` | A role is hitting a source with **no provisioned least-privilege credential** (per-role DB-role provisioning gap). In epic 005 this fails the user's query. Action: provision the restricted credential for that (tenant,role,source) — not a code bug. |
+| **A15** | **Retention purge stale or failing** | `time() − retention.purge.last_success.timestamp > 90000` (25 h) **OR** `increase(retention.purge.run.count{outcome="fatal"}) > 0` | stale > 25 h, or any fatal run | 1 h eval (no recovery until a clean run lands) | P2 `#ops-pager` | The GAP-4 365-day purge job has not had a clean run in > 25 h (daily cadence) or threw fatally. Data is being **retained past its retention window** (compliance/GAP-9 audit). Action: check the scheduler process is alive, inspect `retention_purge_fatal`/`retention_purge_error` logs, re-run the purge. **Per-tenant** `retention.purge.tenants.errored.count > 0` while the run still completes is the **P3** branch (one tenant stuck — investigate that schema, not the job). |
 
 ### Suppression / dedup
 
@@ -231,6 +267,8 @@ on-call channel** (SLO burn / elevated failures), **P3 = ticket/daily digest**
   security-control failure during a deploy is still an incident.
 - **Maintenance windows:** ops can silence A5–A12, A14 during announced maintenance;
   A1/A2/A13 cannot be silenced (require an explicit, audited override).
+- **A15 / A16 are not deploy-sensitive** (25 h staleness window / 1 h trend) — no deploy
+  suppression needed; ops may silence them during an announced retention-job maintenance.
 - **Dedup:** group by `alertname` + `tenant_id` so one bad tenant doesn't fan out into
   N pages.
 
@@ -283,6 +321,12 @@ specs (metric + aggregation); import as JSON via T7.5.
 - Data-source test outcomes: `datasource.test.count` by `data_source_kind`,`outcome` (S7 admin "test").
 - Data-source exec p95 by `data_source_id` / `data_source_kind` — cross-link to Group 2 / A6 (not duplicated here).
 
+### Group 8 — Retention purge & query guard (epic 005)
+- **Purge freshness (BIG SINGLE-STAT, red if > 25 h):** `time() − retention.purge.last_success.timestamp` — headline tile (A15).
+- Purge runs over time: `retention.purge.run.count` by `outcome` (success vs fatal); overlay `retention.purge.tenants.errored.count`.
+- Conversations deleted per run: `retention.purge.deleted.count` (trend — expected non-zero only once rows age past 365 d).
+- Injection-guard rejects: `ask.validation.reject.count` by `reason` (stacked); security reasons (`non_select`/`dml`/`ddl`/`multi_statement`) highlighted vs benign (`parse_error`/`too_long`) — A16.
+
 ---
 
 ## 5. Logs (pino)
@@ -318,3 +362,5 @@ specs (metric + aggregation); import as JSON via T7.5.
 | **Credential vault decrypt/encrypt health** (epic 004) | `vault.decrypt.failure.count`, `vault.encrypt.failure.count` (Group 7) → **A13 (P1)** |
 | Restricted-credential provisioning gaps (epic 004) | `datasource.credential.resolve.count` (Group 7), A14 |
 | Data-source connection test (S7) | `datasource.test.count` (Group 7) |
+| **Retention purge job health (epic 005, GAP-4/9)** | `retention.purge.*` (Group 8) → **A15 (P2/P3)**, SLO freshness < 25 h |
+| Injection-guard rejects by reason (epic 005, NFR-SEC-3) | `ask.validation.reject.count` (Group 8) → A16 (P3) |

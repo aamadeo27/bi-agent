@@ -16,7 +16,7 @@ listed in each Task's `kb-refs` plus this index. Keep entries to pointers.
 - [conventions/secrets.md](conventions/secrets.md) — secrets store per env, required secrets list, local dev story, rotation policy, hard rules.
 - [monitoring-direction.md](monitoring-direction.md) — what must be observable (gate, latency, LLM cost/tokens, errors). Direction only; `monitor` agent owns concrete config.
 - [monitoring.md](monitoring.md) — concrete monitoring config: metrics catalog (names/types/labels/source spans), SLOs, alert rules (incl. P1 gate-bypass), dashboard panel groups. Produced from monitoring-direction.
-- [common-pitfalls.md](common-pitfalls.md) — gate bypass, tenant leakage, LLM injection, streaming back-pressure, export leaks, data-source connector pitfalls (credential leak, row-cap, nullable-type inference, vault env isolation).
+- [common-pitfalls.md](common-pitfalls.md) — gate bypass, tenant leakage, LLM injection, streaming back-pressure, export leaks, data-source connector pitfalls (credential leak, row-cap, nullable-type inference, vault env isolation), ask pipeline orchestrator pitfalls (block-is-non-terminal, fire-and-forget test flushing, DML gate-vs-validator).
 - [bootstrap-plan.md](bootstrap-plan.md) — concrete scaffold spec for the coder: exact monorepo folder tree, local dev one-command flow, Turborepo task graph, CI stub-to-real approach, scaffold order, and flagged conflicts.
 
 ## Locked decisions (do not re-open)

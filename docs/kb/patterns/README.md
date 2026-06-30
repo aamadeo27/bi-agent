@@ -19,4 +19,6 @@ Implementation patterns every Task should follow. Item anchors match `kb-refs`
 
 ---
 
-See also → [common-pitfalls § Data-source connectors](../common-pitfalls.md#data-source-connectors) for credential-leak, row-cap, nullable-type, and vault-env pitfalls introduced in epic 004.
+See also:
+- [common-pitfalls § Data-source connectors](../common-pitfalls.md#data-source-connectors) — credential-leak, row-cap, nullable-type, vault-env (epic 004).
+- [common-pitfalls § Ask pipeline (orchestrator)](../common-pitfalls.md#ask-pipeline-orchestrator) — block-is-non-terminal, fire-and-forget test flushing, DML gate-blocks vs validator rejection (epic 005).

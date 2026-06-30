@@ -90,6 +90,37 @@ Read before working on the ask pipeline, RBAC, tenancy, or streaming. The
   up a stale key — or to crash because vault validates the key format on first call.
   First seen: T4.1 / T4.2.
 
+## Ask pipeline (orchestrator)
+
+- **Treating `block` as a terminal SSE event.** `block` is informational — the
+  pipeline still sends `done` after it. Only `done` and `error` are terminal.
+  UI must not close the SSE connection on `block`; the stream ends with `done`.
+  First seen: T5.5.
+
+- **Asserting fire-and-forget calls without flushing microtasks.** `addMessage`
+  (assistant) and `emitAuditEvent` are fired without `await` in the finally block.
+  Test assertions on them will silently miss unless you flush the microtask queue
+  after `runAskPipeline` resolves:
+  ```ts
+  for (let i = 0; i < 5; i++) await Promise.resolve();
+  expect(mockEmitAuditEvent).toHaveBeenCalledWith(...);
+  ```
+  First seen: T5.5 (audit, block, validation-fail test groups).
+
+- **Using DML to test validator rejection — gets gate-blocked instead.** When
+  `node-sql-parser` processes DML (`DELETE`/`INSERT`/`UPDATE`) inside `evaluateGate`,
+  it may throw on `tableList`/`columnList` access. The gate catches this, fails
+  closed, and emits a `block` event — the pipeline never reaches the validator.
+  To test validator-specific rejection (e.g. length limit), use a valid SELECT
+  padded with a comment so the AST parses cleanly but the raw-string length check
+  triggers:
+  ```ts
+  // Gate parses "SELECT x FROM t" (comment stripped → ≤ 35 chars, OK).
+  // Validator checks sql.length on the raw string (35 + 7966 = 8001 > 8000 → VALIDATION).
+  const q = `SELECT x FROM t -- ${"A".repeat(7966)}`;
+  ```
+  First seen: T5.5 integration tests.
+
 ## Prisma / DB access (control plane vs data plane)
 - **Using Prisma for data-plane queries.** Prisma is **control plane only**
   (tenants/roles/users/grants/conversations/audit). Running a generated tenant query
