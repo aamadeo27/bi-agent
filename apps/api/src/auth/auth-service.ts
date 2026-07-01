@@ -11,6 +11,15 @@ export interface AuthTokens {
   accessToken: string;
   refreshRaw: string;
   refreshExpiresAt: Date;
+  /** Included for audit emission at the call site — never sent to client. */
+  userId: string;
+  tenantId: string;
+  roleId: string | null;
+}
+
+/** Attached to AUTH errors thrown by login() so the caller can emit login_failed audit. */
+export interface AuthFailContext {
+  auditContext: { userId: string; tenantId: string; roleId: string | null } | null;
 }
 
 /**
@@ -38,11 +47,19 @@ export async function login(
   }
 
   if (!user || !valid) {
-    throw Object.assign(new Error("Invalid credentials"), { code: "AUTH" });
+    throw Object.assign(new Error("Invalid credentials"), {
+      code: "AUTH",
+      auditContext: user
+        ? { userId: user.id, tenantId: user.tenantId ?? "", roleId: user.roleId ?? null }
+        : null,
+    });
   }
 
   if (user.status !== "active") {
-    throw Object.assign(new Error("Account is not active"), { code: "AUTH" });
+    throw Object.assign(new Error("Account is not active"), {
+      code: "AUTH",
+      auditContext: { userId: user.id, tenantId: user.tenantId ?? "", roleId: user.roleId ?? null },
+    });
   }
 
   const accessToken = await signAccessToken({
@@ -54,7 +71,14 @@ export async function login(
   const { raw: refreshRaw, expiresAt: refreshExpiresAt } =
     await createRefreshToken(user.id, db);
 
-  return { accessToken, refreshRaw, refreshExpiresAt };
+  return {
+    accessToken,
+    refreshRaw,
+    refreshExpiresAt,
+    userId: user.id,
+    tenantId: user.tenantId ?? "",
+    roleId: user.roleId ?? null,
+  };
 }
 
 /**
@@ -91,7 +115,14 @@ export async function refresh(
   const { raw: refreshRaw, expiresAt: refreshExpiresAt } =
     await createRefreshToken(user.id, db);
 
-  return { accessToken, refreshRaw, refreshExpiresAt };
+  return {
+    accessToken,
+    refreshRaw,
+    refreshExpiresAt,
+    userId: user.id,
+    tenantId: user.tenantId ?? "",
+    roleId: user.roleId ?? null,
+  };
 }
 
 /**

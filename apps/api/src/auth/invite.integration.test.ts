@@ -55,6 +55,9 @@ const FAKE_AUTH_TOKENS = {
   accessToken: "fake-access-tok",
   refreshRaw: "fake-refresh-raw",
   refreshExpiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+  userId: "new-user-id",
+  tenantId: "tenant01",
+  roleId: null,
 };
 
 beforeEach(() => {
