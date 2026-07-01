@@ -17,6 +17,7 @@
  */
 
 import { randomUUID } from "node:crypto";
+import { SpanStatusCode, context, trace } from "@opentelemetry/api";
 import { withTenant } from "../db/with-tenant.js";
 import { addMessage, getHistoryWindow } from "../conversations/index.js";
 import { evaluateGate, type Dialect } from "./permission-gate.js";
@@ -33,7 +34,10 @@ import type {
   PermissionBlock,
   AuditEventType,
 } from "@bi/contracts";
+import { createRequestLogger } from "../observability/logger.js";
 import { logger } from "../observability/logger.js";
+import { getTracer } from "../observability/otel.js";
+import { getAskMetrics } from "../observability/metrics.js";
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -251,6 +255,15 @@ export async function runAskPipeline(args: OrchestratorArgs): Promise<void> {
 
   const userMessageId = randomUUID();
   const assistantMessageId = randomUUID();
+  // Correlation id: emitted on every span attribute + log line for this request.
+  const requestId = randomUUID();
+
+  const tracer = getTracer();
+  const m = getAskMetrics();
+
+  // Request-scoped logger: every line automatically carries tenant/user context.
+  // roleName is unknown until Step 1 resolves — we'll rebind after.
+  const reqLog = createRequestLogger({ tenantId, userId, roleId, requestId });
 
   // Mutable state shared across try/finally
   let assistantContent = "";
@@ -268,215 +281,371 @@ export async function runAskPipeline(args: OrchestratorArgs): Promise<void> {
     terminalSent = true;
   };
 
+  // ── Root pipeline span ──────────────────────────────────────────────────────
+  const pipelineSpan = tracer.startSpan("ask.pipeline", {
+    attributes: {
+      "tenant.id": tenantId,
+      "user.id": userId,
+      "role.id": roleId,
+      "request.id": requestId,
+      "conversation.id": conversationId,
+    },
+  });
+  const pipelineCtx = trace.setSpan(context.active(), pipelineSpan);
+  const e2eStart = Date.now();
+
   try {
-    // ── Step 1: Load context + persist user message in one transaction ──────────
-    const { grants, dataSource, historyMessages } = await withTenant(
-      tenantId,
-      async (tx) => {
-        // Persist user message first so history is captured even on pipeline error
-        await addMessage(tx, {
-          id: userMessageId,
-          conversationId,
-          role: "user",
-          content: text,
-        });
+    await context.with(pipelineCtx, async () => {
+      // ── Step 1: Load context + persist user message in one transaction ────────
+      const { grants, dataSource, historyMessages } = await withTenant(
+        tenantId,
+        async (tx) => {
+          await addMessage(tx, {
+            id: userMessageId,
+            conversationId,
+            role: "user",
+            content: text,
+          });
 
-        // Role name for audit + PermissionBlock
-        const roleRows = await tx.$queryRawUnsafe<{ name: string }[]>(
-          `SELECT name FROM roles WHERE id = $1`,
-          roleId,
-        );
-        if (!roleRows.length) {
-          throw new OrchestratorError("AUTH", "Role not found");
-        }
-        roleName = roleRows[0].name;
-
-        // Grants for this role (all data sources)
-        const grantRows = await tx.$queryRawUnsafe<GrantRow[]>(
-          `SELECT data_source_id, kind, schema, "table", "column"
-           FROM resource_grants
-           WHERE role_id = $1
-           ORDER BY data_source_id, kind, schema, "table", "column"`,
-          roleId,
-        );
-
-        // First connected data source the role has grants for
-        const dsRows = await tx.$queryRawUnsafe<DataSourceRow[]>(
-          `SELECT DISTINCT ds.id, ds.type
-           FROM data_sources ds
-           INNER JOIN resource_grants rg
-             ON rg.data_source_id = ds.id AND rg.role_id = $1
-           WHERE ds.status = 'connected'
-           LIMIT 1`,
-          roleId,
-        );
-        if (!dsRows.length) {
-          throw new OrchestratorError(
-            "DATA_SOURCE",
-            "No connected data source with grants available for your role.",
+          const roleRows = await tx.$queryRawUnsafe<{ name: string }[]>(
+            `SELECT name FROM roles WHERE id = $1`,
+            roleId,
           );
-        }
+          if (!roleRows.length) {
+            throw new OrchestratorError("AUTH", "Role not found");
+          }
+          roleName = roleRows[0].name;
+          pipelineSpan.setAttribute("role.name", roleName);
 
-        // Map raw grant rows → ResourceGrantSet
-        const grants: ResourceGrantSet = grantRows.map((r) => ({
-          roleId,
-          dataSourceId: r.data_source_id,
-          kind: r.kind,
-          schema: r.schema,
-          ...(r.table !== null ? { table: r.table } : {}),
-          ...(r.column !== null ? { column: r.column } : {}),
-        }));
+          const grantRows = await tx.$queryRawUnsafe<GrantRow[]>(
+            `SELECT data_source_id, kind, schema, "table", "column"
+             FROM resource_grants
+             WHERE role_id = $1
+             ORDER BY data_source_id, kind, schema, "table", "column"`,
+            roleId,
+          );
 
-        const historyMessages = await getHistoryWindow(
-          tx,
-          conversationId,
-          userId,
-          HISTORY_TOKEN_BUDGET,
-        );
+          const dsRows = await tx.$queryRawUnsafe<DataSourceRow[]>(
+            `SELECT DISTINCT ds.id, ds.type
+             FROM data_sources ds
+             INNER JOIN resource_grants rg
+               ON rg.data_source_id = ds.id AND rg.role_id = $1
+             WHERE ds.status = 'connected'
+             LIMIT 1`,
+            roleId,
+          );
+          if (!dsRows.length) {
+            throw new OrchestratorError(
+              "DATA_SOURCE",
+              "No connected data source with grants available for your role.",
+            );
+          }
 
-        return { grants, dataSource: dsRows[0], historyMessages };
-      },
-    );
+          const grants: ResourceGrantSet = grantRows.map((r) => ({
+            roleId,
+            dataSourceId: r.data_source_id,
+            kind: r.kind,
+            schema: r.schema,
+            ...(r.table !== null ? { table: r.table } : {}),
+            ...(r.column !== null ? { column: r.column } : {}),
+          }));
 
-    auditDataSourceId = dataSource.id;
-    const dialect = typeToDialect(dataSource.type);
+          const historyMessages = await getHistoryWindow(
+            tx,
+            conversationId,
+            userId,
+            HISTORY_TOKEN_BUDGET,
+          );
 
-    // ── Step 2: Build LLM context (schema metadata only — GAP-18) ──────────────
-    const schemaPrompt = buildSchemaPrompt(grants, dataSource.id);
-    const history = historyMessages.map((m) => ({
-      role: m.role as "user" | "assistant",
-      content: m.content,
-    }));
+          return { grants, dataSource: dsRows[0], historyMessages };
+        },
+      );
 
-    // ── Step 3: Generate query proposal ────────────────────────────────────────
-    const proposal = await llm.generateQuery({
-      userMessage: text,
-      history,
-      systemPrompt: schemaPrompt,
-    });
-
-    generatedQueryText = proposal.query;
-    const generatedQuery = { sql: proposal.query, queryType: proposal.queryType };
-
-    // ── Step 4: Send meta event ─────────────────────────────────────────────────
-    send("meta", { messageId: assistantMessageId, queryType: proposal.queryType });
-
-    // ── Step 5: Permission gate (L1 security boundary) ──────────────────────────
-    const gateResult = evaluateGate({ query: generatedQuery, grants, dialect });
-
-    if (!gateResult.allow) {
-      const block: PermissionBlock = {
-        messageId: assistantMessageId,
-        roleName,
-        missing: gateResult.missing,
-      };
-      send("block", { block });
-      assistantContent =
-        `Query blocked: insufficient permissions for ${gateResult.missing.length} resource(s).`;
-      auditType = "query_blocked";
-      auditOutcome = "blocked";
-      auditDetail = {
-        queryText: proposal.query,
-        missing: gateResult.missing,
-      };
-      // block is non-terminal; done follows
-      sendTerminal("done", { messageId: assistantMessageId });
-      return;
-    }
-
-    // ── Step 6: Query validation / injection guard ──────────────────────────────
-    // Pass the gate's pre-parsed AST so the validator skips a redundant parse.
-    const valResult = validateQuery(generatedQuery, { dialect, precomputedAst: gateResult.ast });
-    if (!valResult.ok) {
-      assistantContent = `Validation failed: ${valResult.error.message}`;
-      auditType = "query_validation_failed";
-      auditOutcome = "error";
-      auditDetail = {
-        queryText: proposal.query,
-        validationError: valResult.error.message,
-      };
-      sendTerminal("error", {
-        code: "VALIDATION",
-        message: valResult.error.message,
+      auditDataSourceId = dataSource.id;
+      const dialect = typeToDialect(dataSource.type);
+      pipelineSpan.setAttributes({
+        "datasource.id": dataSource.id,
+        "datasource.type": dataSource.type,
+        "llm.provider": llm.id,
+        "llm.model": llm.model,
       });
-      return;
-    }
 
-    // ── Step 7: Execute via Query Proxy (L2 backstop) ──────────────────────────
-    const proxyQuery = toProxyQuery(valResult.query);
-    const rawResult = await proxyExecute({
-      tenantId,
-      roleId,
-      dataSourceId: dataSource.id,
-      query: proxyQuery,
-    });
+      // ── Step 2: Build LLM context (schema metadata only — GAP-18) ────────────
+      const schemaPrompt = buildSchemaPrompt(grants, dataSource.id);
+      const history = historyMessages.map((m) => ({
+        role: m.role as "user" | "assistant",
+        content: m.content,
+      }));
 
-    // ── Step 8: Chart selection ─────────────────────────────────────────────────
-    const inputCols = rawResult.columns.map((c) => ({ name: c.name, type: c.type }));
-    const chartResult = selectChartType(inputCols, rawResult.rows, rawResult.rowCount);
-
-    // ── Step 9: Build ResultEnvelope ────────────────────────────────────────────
-    resultEnvelope = {
-      messageId: assistantMessageId,
-      queryType: proposal.queryType,
-      chartType: chartResult.chartType,
-      columns: chartResult.columns,
-      rows: rawResult.rows,
-      rowCount: rawResult.rowCount,
-      truncated: rawResult.truncated,
-      ...(chartResult.notes !== undefined ? { notes: chartResult.notes } : {}),
-    };
-
-    auditDetail = {
-      queryText: proposal.query,
-      rowCount: rawResult.rowCount,
-      chartType: chartResult.chartType,
-    };
-
-    // ── Step 10: Send result event ──────────────────────────────────────────────
-    send("result", { envelope: resultEnvelope });
-
-    // ── Step 11: Stream natural-language narration tokens ──────────────────────
-    // System prompt for narration uses schema metadata + result shape only — no row values.
-    const narrationPrompt = [
-      schemaPrompt,
-      "",
-      `The following SQL was executed: ${proposal.query}`,
-      `It returned ${rawResult.rowCount} rows with columns: ${rawResult.columns.map((c) => c.name).join(", ")}.`,
-      "Describe these results concisely. Do not enumerate individual row values.",
-    ].join("\n");
-
-    const tokenIter = llm.streamText({
-      userMessage: text,
-      history,
-      systemPrompt: narrationPrompt,
-    })[Symbol.asyncIterator]();
-
-    try {
-      while (true) {
-        if (signal.aborted) break;
-        const next = await tokenIter.next();
-        if (next.done) break;
-        if (signal.aborted) break;
-        send("token", { delta: next.value });
-        assistantContent += next.value;
+      // ── Step 3: Generate query proposal ──────────────────────────────────────
+      const llmGenerateSpan = tracer.startSpan("ask.llm.generate", {
+        attributes: {
+          "tenant.id": tenantId,
+          "request.id": requestId,
+          "llm.provider": llm.id,
+          "llm.model": llm.model,
+        },
+      });
+      const llmGenStart = Date.now();
+      let proposal;
+      try {
+        proposal = await llm.generateQuery({
+          userMessage: text,
+          history,
+          systemPrompt: schemaPrompt,
+        });
+        llmGenerateSpan.setStatus({ code: SpanStatusCode.OK });
+      } catch (err) {
+        llmGenerateSpan.setStatus({ code: SpanStatusCode.ERROR, message: String(err) });
+        throw err;
+      } finally {
+        llmGenerateSpan.end();
+        m.llmGenerateLatency.record(Date.now() - llmGenStart, {
+          tenant_id: tenantId,
+          provider: llm.id,
+          model: llm.model,
+        });
       }
-    } finally {
-      // Clean up generator on early exit (client disconnect)
-      await tokenIter.return?.()?.catch?.(() => undefined);
-    }
 
-    auditOutcome = "success";
-    sendTerminal("done", { messageId: assistantMessageId });
+      reqLog.debug({ queryType: proposal.queryType }, "orchestrator: query generated");
+      generatedQueryText = proposal.query;
+      const generatedQuery = { sql: proposal.query, queryType: proposal.queryType };
+
+      // ── Step 4: Send meta event ───────────────────────────────────────────────
+      send("meta", { messageId: assistantMessageId, queryType: proposal.queryType });
+
+      // ── Step 5: Permission gate (L1 security boundary) ────────────────────────
+      const gateSpan = tracer.startSpan("ask.gate.evaluate", {
+        attributes: {
+          "tenant.id": tenantId,
+          "request.id": requestId,
+          "role.id": roleId,
+          "role.name": roleName,
+          "gate.query_type": proposal.queryType,
+        },
+      });
+      let gateResult;
+      try {
+        gateResult = evaluateGate({ query: generatedQuery, grants, dialect });
+        gateSpan.setAttribute("gate.decision", gateResult.allow ? "allow" : "block");
+        if (!gateResult.allow) {
+          gateSpan.setAttribute("gate.missing_count", gateResult.missing.length);
+        }
+        gateSpan.setStatus({ code: SpanStatusCode.OK });
+      } catch (err) {
+        gateSpan.setStatus({ code: SpanStatusCode.ERROR, message: String(err) });
+        throw err;
+      } finally {
+        gateSpan.end();
+      }
+
+      // Record gate metric regardless of outcome.
+      m.gateDecisions.add(1, {
+        decision: gateResult.allow ? "allow" : "block",
+        tenant_id: tenantId,
+        role_id: roleId,
+      });
+
+      if (!gateResult.allow) {
+        reqLog.info(
+          { missingCount: gateResult.missing.length },
+          "orchestrator: gate blocked query",
+        );
+        m.errors.add(1, { error_code: "GATE_BLOCK", tenant_id: tenantId });
+
+        const block: PermissionBlock = {
+          messageId: assistantMessageId,
+          roleName,
+          missing: gateResult.missing,
+        };
+        send("block", { block });
+        assistantContent =
+          `Query blocked: insufficient permissions for ${gateResult.missing.length} resource(s).`;
+        auditType = "query_blocked";
+        auditOutcome = "blocked";
+        auditDetail = {
+          // Do NOT include query text — no SQL/row data in spans or logs.
+          missing: gateResult.missing,
+        };
+        sendTerminal("done", { messageId: assistantMessageId });
+        return;
+      }
+
+      // ── Step 6: Query validation / injection guard ────────────────────────────
+      const validatorSpan = tracer.startSpan("ask.query.validate", {
+        attributes: {
+          "tenant.id": tenantId,
+          "request.id": requestId,
+          "gate.query_type": proposal.queryType,
+        },
+      });
+      let valResult;
+      try {
+        valResult = validateQuery(generatedQuery, { dialect, precomputedAst: gateResult.ast });
+        validatorSpan.setAttribute("validation.ok", valResult.ok);
+        validatorSpan.setStatus({ code: SpanStatusCode.OK });
+      } catch (err) {
+        validatorSpan.setStatus({ code: SpanStatusCode.ERROR, message: String(err) });
+        throw err;
+      } finally {
+        validatorSpan.end();
+      }
+
+      if (!valResult.ok) {
+        reqLog.warn({ validationError: valResult.error.message }, "orchestrator: query validation failed");
+        m.errors.add(1, { error_code: "VALIDATION", tenant_id: tenantId });
+        assistantContent = `Validation failed: ${valResult.error.message}`;
+        auditType = "query_validation_failed";
+        auditOutcome = "error";
+        auditDetail = { validationError: valResult.error.message };
+        sendTerminal("error", {
+          code: "VALIDATION",
+          message: valResult.error.message,
+        });
+        return;
+      }
+
+      // ── Step 7: Execute via Query Proxy (L2 backstop) ────────────────────────
+      const dsSpan = tracer.startSpan("ask.datasource.execute", {
+        attributes: {
+          "tenant.id": tenantId,
+          "request.id": requestId,
+          "datasource.id": dataSource.id,
+          "datasource.type": dataSource.type,
+        },
+      });
+      const dsStart = Date.now();
+      let rawResult;
+      const proxyQuery = toProxyQuery(valResult.query);
+      try {
+        rawResult = await proxyExecute({
+          tenantId,
+          roleId,
+          dataSourceId: dataSource.id,
+          query: proxyQuery,
+        });
+        dsSpan.setAttributes({
+          "datasource.row_count": rawResult.rowCount,
+          "datasource.truncated": rawResult.truncated,
+        });
+        dsSpan.setStatus({ code: SpanStatusCode.OK });
+      } catch (err) {
+        dsSpan.setStatus({ code: SpanStatusCode.ERROR, message: String(err) });
+        throw err;
+      } finally {
+        dsSpan.end();
+        m.datasourceLatency.record(Date.now() - dsStart, {
+          tenant_id: tenantId,
+          datasource_id: dataSource.id,
+        });
+      }
+
+      // ── Step 8: Chart selection ───────────────────────────────────────────────
+      const inputCols = rawResult.columns.map((c) => ({ name: c.name, type: c.type }));
+      const chartResult = selectChartType(inputCols, rawResult.rows, rawResult.rowCount);
+      pipelineSpan.setAttribute("chart.type", chartResult.chartType);
+
+      // ── Step 9: Build ResultEnvelope ──────────────────────────────────────────
+      resultEnvelope = {
+        messageId: assistantMessageId,
+        queryType: proposal.queryType,
+        chartType: chartResult.chartType,
+        columns: chartResult.columns,
+        rows: rawResult.rows,
+        rowCount: rawResult.rowCount,
+        truncated: rawResult.truncated,
+        ...(chartResult.notes !== undefined ? { notes: chartResult.notes } : {}),
+      };
+
+      auditDetail = {
+        // No query text here — row count + chart type are safe metadata.
+        rowCount: rawResult.rowCount,
+        chartType: chartResult.chartType,
+      };
+
+      // ── Step 10: Send result event ────────────────────────────────────────────
+      send("result", { envelope: resultEnvelope });
+
+      // ── Step 11: Stream narration tokens ──────────────────────────────────────
+      // System prompt uses schema metadata + result shape only — never row values.
+      const narrationPrompt = [
+        schemaPrompt,
+        "",
+        `The following SQL was executed: ${proposal.query}`,
+        `It returned ${rawResult.rowCount} rows with columns: ${rawResult.columns.map((c) => c.name).join(", ")}.`,
+        "Describe these results concisely. Do not enumerate individual row values.",
+      ].join("\n");
+
+      const streamSpan = tracer.startSpan("ask.llm.stream", {
+        attributes: {
+          "tenant.id": tenantId,
+          "request.id": requestId,
+          "llm.provider": llm.id,
+          "llm.model": llm.model,
+        },
+      });
+      const streamStart = Date.now();
+      let tokenCount = 0;
+
+      const tokenIter = llm.streamText({
+        userMessage: text,
+        history,
+        systemPrompt: narrationPrompt,
+      })[Symbol.asyncIterator]();
+
+      try {
+        while (true) {
+          if (signal.aborted) break;
+          const next = await tokenIter.next();
+          if (next.done) break;
+          if (signal.aborted) break;
+          send("token", { delta: next.value });
+          assistantContent += next.value;
+          tokenCount++;
+        }
+        streamSpan.setAttribute("llm.stream.tokens_approx", tokenCount);
+        streamSpan.setStatus({ code: SpanStatusCode.OK });
+      } catch (err) {
+        streamSpan.setStatus({ code: SpanStatusCode.ERROR, message: String(err) });
+        throw err;
+      } finally {
+        // Clean up generator on early exit (client disconnect)
+        await tokenIter.return?.()?.catch?.(() => undefined);
+        streamSpan.end();
+        m.llmStreamLatency.record(Date.now() - streamStart, {
+          tenant_id: tenantId,
+          provider: llm.id,
+          model: llm.model,
+        });
+        // Approximate token counts (output tokens ~ number of chunks).
+        // When the LLM adapter exposes usage, replace with exact values.
+        m.llmTokensOut.add(tokenCount, {
+          tenant_id: tenantId,
+          provider: llm.id,
+          model: llm.model,
+        });
+      }
+
+      auditOutcome = "success";
+      reqLog.info({ rowCount: rawResult.rowCount }, "orchestrator: pipeline success");
+      sendTerminal("done", { messageId: assistantMessageId });
+    });
   } catch (err) {
-    logger.error({ err }, "orchestrator: pipeline error");
+    reqLog.error({ err }, "orchestrator: pipeline error");
     const classified = classifyError(err);
+    pipelineSpan.setStatus({ code: SpanStatusCode.ERROR, message: classified.message });
+    pipelineSpan.setAttribute("error.code", classified.code);
+    m.errors.add(1, { error_code: classified.code, tenant_id: tenantId });
     if (!terminalSent) {
       sendTerminal("error", classified);
     }
     auditOutcome = "error";
     auditDetail = { ...auditDetail, error: classified.message };
   } finally {
+    // Record end-to-end latency
+    m.e2eLatency.record(Date.now() - e2eStart, { tenant_id: tenantId });
+    pipelineSpan.end();
+
     // Persist assistant message (fire-and-forget; never fails the SSE response)
     withTenant(tenantId, (tx) =>
       addMessage(tx, {
