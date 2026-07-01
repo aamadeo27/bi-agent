@@ -12,3 +12,6 @@ global.ResizeObserver = ResizeObserverStub;
 // rule calls it and would throw without this stub.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 (HTMLCanvasElement.prototype as any).getContext = () => null;
+
+// jsdom doesn't implement Element.scrollTo — used by the ChatTimeline auto-scroll.
+Element.prototype.scrollTo = () => {};
