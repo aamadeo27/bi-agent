@@ -11,6 +11,8 @@ import type {
   ResourceGrantSet,
   SchemaTree,
   DataSource,
+  AuditEvent,
+  AuditEventType,
 } from "@bi/contracts";
 import { ApiErrorResponseSchema } from "@bi/contracts";
 import { getAccessToken, setAccessToken, clearAccessToken } from "./auth-store";
@@ -319,4 +321,37 @@ export async function inviteUser(data: InviteUserPayload): Promise<{ userId: str
     method: "POST",
     body: JSON.stringify(data),
   });
+}
+
+// ─── Admin: Audit Log ─────────────────────────────────────────────────────────
+
+export interface AuditLogParams {
+  from?: string;
+  to?: string;
+  type?: AuditEventType[];
+  userId?: string;
+  dataSourceId?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface AuditLogResponse {
+  events: AuditEvent[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+/** GET /api/admin/audit → paginated, filtered audit event list (admin-gated). */
+export async function getAuditLog(params: AuditLogParams = {}): Promise<AuditLogResponse> {
+  const qs = new URLSearchParams();
+  if (params.from) qs.set("from", params.from);
+  if (params.to) qs.set("to", params.to);
+  if (params.type?.length) qs.set("type", params.type.join(","));
+  if (params.userId) qs.set("userId", params.userId);
+  if (params.dataSourceId) qs.set("dataSourceId", params.dataSourceId);
+  if (params.page != null) qs.set("page", String(params.page));
+  if (params.pageSize != null) qs.set("pageSize", String(params.pageSize));
+  const q = qs.toString();
+  return request<AuditLogResponse>(`/admin/audit${q ? `?${q}` : ""}`);
 }

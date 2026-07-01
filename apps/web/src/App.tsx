@@ -8,27 +8,8 @@ import { RolesPage } from "./screens/admin/roles-page";
 import { PermissionEditorPage } from "./screens/admin/permission-editor-page";
 import { UsersPage } from "./screens/admin/users-page";
 import { DataSourcesPage } from "./screens/admin/data-sources-page";
+import { AuditLogPage } from "./screens/admin/audit-log-page";
 import { ChatPage } from "./screens/chat/chat-page";
-
-function PlaceholderPage({
-  screenId,
-  title,
-  note,
-}: {
-  screenId: string;
-  title: string;
-  note?: string;
-}) {
-  return (
-    <main className="flex min-h-screen flex-col items-center justify-center bg-primary-50 px-4">
-      <span className="mb-2 rounded-full bg-primary-200 px-3 py-1 text-label font-semibold uppercase tracking-wider text-primary-700">
-        {screenId}
-      </span>
-      <h1 className="text-heading-1 text-primary-700">{title}</h1>
-      {note && <p className="mt-2 text-body text-neutral-500">{note}</p>}
-    </main>
-  );
-}
 
 // S1 is now the real LoginPage (imported from screens/login-page)
 export { LoginPage };
@@ -49,11 +30,7 @@ export { UsersPage as AdminUsersPage };
 export { DataSourcesPage as AdminDataSourcesPage };
 
 // S8 — Admin: Audit Log (P1)
-export function AdminAuditLogPage() {
-  return (
-    <PlaceholderPage screenId="S8" title="Audit Log" note="Admin — Audit Log (P1 priority)" />
-  );
-}
+export { AuditLogPage as AdminAuditLogPage };
 
 // S10 — Account / Profile (real implementation in screens/account-page.tsx)
 export { AccountPageScreen as AccountPage };
@@ -98,7 +75,7 @@ export function App() {
         {/* S7 — Data Sources */}
         <Route path="data-sources" element={<DataSourcesPage />} />
         {/* S8 — Audit Log */}
-        <Route path="audit" element={<AdminAuditLogPage />} />
+        <Route path="audit" element={<AuditLogPage />} />
       </Route>
 
       {/* S10 — Account / Profile */}
