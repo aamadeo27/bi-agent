@@ -1,6 +1,8 @@
+import { useState } from "react";
 import type { ResultEnvelope } from "@bi/contracts";
 import { ChartCard } from "../../components/chart-card";
 import { renderMarkdown } from "./markdown-renderer";
+import { QueryInspectDrawer } from "./query-inspect-drawer";
 
 interface SystemMessageBubbleProps {
   /** Accumulated text content (may be empty while pending). */
@@ -18,6 +20,10 @@ interface SystemMessageBubbleProps {
   onRetry?: () => void;
   /** Optional receive time shown on hover (e.g. "2:30 PM"). */
   timestamp?: string;
+  /** Server-assigned message ID — enables "View query" when combined with canInspectQuery. */
+  messageId?: string | null;
+  /** Capability flag from /me — shows "View query" button when true. */
+  canInspectQuery?: boolean;
 }
 
 /**
@@ -31,7 +37,10 @@ export function SystemMessageBubble({
   errorMsg,
   onRetry,
   timestamp,
+  messageId,
+  canInspectQuery = false,
 }: SystemMessageBubbleProps) {
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const hasError = Boolean(errorMsg);
 
   return (
@@ -105,6 +114,20 @@ export function SystemMessageBubble({
 
           {/* Chart card — rendered when result envelope is available */}
           {envelope && <ChartCard envelope={envelope} />}
+
+          {/* View query button — capability-gated */}
+          {canInspectQuery && messageId && (
+            <div className="flex justify-end border-t border-neutral-100 pt-2">
+              <button
+                type="button"
+                onClick={() => setDrawerOpen(true)}
+                className="text-body-sm text-primary-600 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-500"
+                data-testid="view-query-button"
+              >
+                View query
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Timestamp — revealed on row hover */}
@@ -117,6 +140,15 @@ export function SystemMessageBubble({
           </span>
         )}
       </div>
+
+      {/* Query inspect drawer — portal renders it outside this subtree */}
+      {canInspectQuery && messageId && (
+        <QueryInspectDrawer
+          messageId={messageId}
+          isOpen={drawerOpen}
+          onClose={() => setDrawerOpen(false)}
+        />
+      )}
     </div>
   );
 }

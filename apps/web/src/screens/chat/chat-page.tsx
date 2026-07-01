@@ -171,6 +171,7 @@ export function ChatPage() {
 
   const me = meQuery.data;
   const isAdmin = me?.capabilities.isAdmin ?? false;
+  const canInspectQuery = me?.capabilities.canInspectQuery ?? false;
   const userName = me?.user.displayName ?? "";
   const tenantName = me?.tenant.displayName ?? "";
 
@@ -232,6 +233,7 @@ export function ChatPage() {
               ref={timelineRef}
               conversationId={conversationId}
               onStreamingChange={setIsStreaming}
+              canInspectQuery={canInspectQuery}
             />
           )}
         </main>

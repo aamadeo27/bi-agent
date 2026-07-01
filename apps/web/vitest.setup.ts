@@ -15,3 +15,14 @@ global.ResizeObserver = ResizeObserverStub;
 
 // jsdom doesn't implement Element.scrollTo — used by the ChatTimeline auto-scroll.
 Element.prototype.scrollTo = () => {};
+
+// jsdom doesn't implement the Clipboard API.
+// Expose a stable stub object so component tests can spy on writeText.
+const _clipboardStub: Pick<Clipboard, "writeText" | "readText"> = {
+  writeText: (_text: string): Promise<void> => Promise.resolve(),
+  readText: (): Promise<string> => Promise.resolve(""),
+};
+Object.defineProperty(navigator, "clipboard", {
+  get: () => _clipboardStub,
+  configurable: true,
+});
