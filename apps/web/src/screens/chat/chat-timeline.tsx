@@ -5,6 +5,7 @@ import {
   useCallback,
   forwardRef,
   useImperativeHandle,
+  memo,
 } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import type { ResultEnvelope, PermissionBlock } from "@bi/contracts";
@@ -110,7 +111,12 @@ export const ChatTimeline = forwardRef<ChatTimelineHandle, ChatTimelineProps>(
       if (!el) return;
       const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
       userScrolledRef.current = !atBottom;
-      setShowFab(!atBottom);
+      // Functional update: return prev unchanged when value hasn't changed, preventing
+      // a React reconciliation over the full heavy timeline on every scroll tick.
+      setShowFab((prev) => {
+        const next = !atBottom;
+        return prev === next ? prev : next;
+      });
     }, []);
 
     function scrollToBottom() {
@@ -228,6 +234,10 @@ export const ChatTimeline = forwardRef<ChatTimelineHandle, ChatTimelineProps>(
     // Expose `send` to parent via ref
     useImperativeHandle(ref, () => ({ send }), [send]);
 
+    // Stable retry callback — captured by memoized ChatMessageItem to avoid
+    // defeating React.memo on every render (lastUserTextRef is a ref, not state).
+    const handleRetry = useCallback(() => send(lastUserTextRef.current), [send]);
+
     // ─── Render ───────────────────────────────────────────────────────────────
 
     return (
@@ -247,77 +257,14 @@ export const ChatTimeline = forwardRef<ChatTimelineHandle, ChatTimelineProps>(
             </div>
           ) : (
             <div className="mx-auto flex max-w-3xl flex-col gap-4">
-              {messages.map((msg) => {
-                if (msg.kind === "user") {
-                  return (
-                    <MessageBubble
-                      key={msg.localId}
-                      text={msg.text}
-                      timestamp={msg.timestamp}
-                    />
-                  );
-                }
-
-                // System messages
-                switch (msg.status) {
-                  case "pending":
-                    return <StreamingIndicator key={msg.localId} />;
-
-                  case "streaming":
-                    return (
-                      <SystemMessageBubble
-                        key={msg.localId}
-                        text={msg.text}
-                        timestamp={msg.timestamp}
-                        isStreaming
-                      />
-                    );
-
-                  case "complete":
-                    return (
-                      <SystemMessageBubble
-                        key={msg.localId}
-                        text={msg.text}
-                        timestamp={msg.timestamp}
-                        messageId={msg.messageId}
-                        canInspectQuery={canInspectQuery}
-                        {...(msg.envelope ? { envelope: msg.envelope } : {})}
-                      />
-                    );
-
-                  case "blocked":
-                    return msg.block ? (
-                      <PermissionBlockMessage
-                        key={msg.localId}
-                        block={msg.block}
-                      />
-                    ) : null;
-
-                  case "clarification":
-                    // isStreaming omitted — CLARIFICATION is a terminal event;
-                    // streaming is always over by the time this state is set.
-                    return (
-                      <ClarificationMessage
-                        key={msg.localId}
-                        text={msg.text}
-                      />
-                    );
-
-                  case "error":
-                    return (
-                      <SystemMessageBubble
-                        key={msg.localId}
-                        text={msg.text}
-                        timestamp={msg.timestamp}
-                        errorMsg={msg.errorMsg ?? "An error occurred."}
-                        onRetry={() => send(lastUserTextRef.current)}
-                      />
-                    );
-
-                  default:
-                    return null;
-                }
-              })}
+              {messages.map((msg) => (
+                <ChatMessageItem
+                  key={msg.localId}
+                  msg={msg}
+                  canInspectQuery={canInspectQuery}
+                  onRetry={handleRetry}
+                />
+              ))}
             </div>
           )}
         </div>
@@ -339,6 +286,74 @@ export const ChatTimeline = forwardRef<ChatTimelineHandle, ChatTimelineProps>(
     );
   },
 );
+
+// ─── Memoized message item ────────────────────────────────────────────────────
+//
+// Extracted so React.memo can bail out for completed messages during streaming.
+// During a token burst the SSE token handler calls setMessages; the .map() inside
+// returns the same object reference for every non-streaming message, so memo
+// skips reconciliation for all those heavy SystemMessageBubble+ChartCard+Recharts
+// trees (~90 reconciliations avoided per second at 30 tok/s with 4 prior charts).
+
+interface ChatMessageItemProps {
+  msg: ChatMessage;
+  canInspectQuery: boolean;
+  onRetry: () => void;
+}
+
+const ChatMessageItem = memo(function ChatMessageItem({
+  msg,
+  canInspectQuery,
+  onRetry,
+}: ChatMessageItemProps) {
+  if (msg.kind === "user") {
+    return <MessageBubble text={msg.text} timestamp={msg.timestamp} />;
+  }
+
+  switch (msg.status) {
+    case "pending":
+      return <StreamingIndicator />;
+
+    case "streaming":
+      return (
+        <SystemMessageBubble
+          text={msg.text}
+          timestamp={msg.timestamp}
+          isStreaming
+        />
+      );
+
+    case "complete":
+      return (
+        <SystemMessageBubble
+          text={msg.text}
+          timestamp={msg.timestamp}
+          messageId={msg.messageId}
+          canInspectQuery={canInspectQuery}
+          {...(msg.envelope ? { envelope: msg.envelope } : {})}
+        />
+      );
+
+    case "blocked":
+      return msg.block ? <PermissionBlockMessage block={msg.block} /> : null;
+
+    case "clarification":
+      return <ClarificationMessage text={msg.text} />;
+
+    case "error":
+      return (
+        <SystemMessageBubble
+          text={msg.text}
+          timestamp={msg.timestamp}
+          errorMsg={msg.errorMsg ?? "An error occurred."}
+          onRetry={onRetry}
+        />
+      );
+
+    default:
+      return null;
+  }
+});
 
 // ─── Icon ─────────────────────────────────────────────────────────────────────
 

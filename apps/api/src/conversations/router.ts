@@ -3,6 +3,7 @@ import type { Router as ExpressRouter, Request, Response } from "express";
 import { z } from "zod";
 import { SendMessageRequestSchema, type ApiErrorResponse } from "@bi/contracts";
 import { logger } from "../observability/logger.js";
+import { getAskMetrics } from "../observability/metrics.js";
 import {
   listConversations,
   createConversation,
@@ -70,6 +71,10 @@ function checkAskRateLimit(userId: string): boolean {
   const now = Date.now();
   const cutoff = now - ASK_RATE_LIMIT_WINDOW_MS;
   const bucket = (_askRateLimitBuckets.get(userId) ?? []).filter((t) => t > cutoff);
+  // Prune stale entry when window has fully expired — prevents unbounded Map growth.
+  if (bucket.length === 0) {
+    _askRateLimitBuckets.delete(userId);
+  }
   if (bucket.length >= ASK_RATE_LIMIT_MAX) {
     _askRateLimitBuckets.set(userId, bucket);
     return false;
@@ -224,9 +229,20 @@ conversationsRouter.post("/:id/messages", async (req: Request, res: Response) =>
   });
   res.flushHeaders();
 
+  const streamMetrics = getAskMetrics();
+  const tenantId = auth.tenantId;
+  streamMetrics.streamingActive.add(1, { tenant_id: tenantId });
+
   const ac = new AbortController();
+  let streamCompletedCleanly = false;
+
   // Client disconnect → abort the upstream LLM stream (no leak)
-  req.on("close", () => ac.abort());
+  req.on("close", () => {
+    if (!streamCompletedCleanly) {
+      streamMetrics.streamingAborted.add(1, { tenant_id: tenantId });
+    }
+    ac.abort();
+  });
 
   /**
    * Write one SSE event.
@@ -255,11 +271,13 @@ conversationsRouter.post("/:id/messages", async (req: Request, res: Response) =>
       signal: ac.signal,
       ...(req.ip !== undefined ? { ip: req.ip } : {}),
     });
+    streamCompletedCleanly = true;
   } catch (err) {
     // Pipeline errors are handled internally (always emits error/done).
     // This catch is a safety net for unexpected throws.
     logger.error({ err }, "conversations POST /:id/messages unhandled pipeline error");
   } finally {
+    streamMetrics.streamingActive.add(-1, { tenant_id: tenantId });
     res.end();
   }
 });

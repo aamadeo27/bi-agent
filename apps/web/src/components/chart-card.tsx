@@ -73,6 +73,14 @@ async function exportChartAsImage(
   });
 }
 
+/**
+ * Prefix cell values that start with formula-trigger characters so spreadsheet
+ * apps (Excel, Sheets) treat them as text rather than executing a formula. CWE-1236.
+ */
+function sanitizeCsvCell(v: string): string {
+  return /^[=+\-@\t\r]/.test(v) ? `'${v}` : v;
+}
+
 function exportAsCsv(envelope: ResultEnvelope): void {
   const headers = envelope.columns.map((c) => c.name);
   const csvLines = [
@@ -82,7 +90,7 @@ function exportAsCsv(envelope: ResultEnvelope): void {
         .map((h) => {
           const v = row[h] ?? null;
           if (v === null) return "";
-          if (typeof v === "string") return JSON.stringify(v);
+          if (typeof v === "string") return JSON.stringify(sanitizeCsvCell(v));
           return String(v);
         })
         .join(",")
@@ -95,7 +103,8 @@ function exportAsCsv(envelope: ResultEnvelope): void {
 }
 
 function exportAsJson(envelope: ResultEnvelope): void {
-  const blob = new Blob([JSON.stringify(envelope.rows, null, 2)], {
+  // Compact JSON — pretty-printing at 5 000-row threshold costs 3-4× memory and blocks the main thread.
+  const blob = new Blob([JSON.stringify(envelope.rows)], {
     type: "application/json",
   });
   downloadBlob(blob, `bi-export-${envelope.messageId}.json`);
