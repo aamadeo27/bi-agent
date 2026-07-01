@@ -9,7 +9,7 @@ import { withTenant } from "../db/with-tenant.js";
 import { logger } from "../observability/logger.js";
 import type { AuthContext } from "../middleware/auth.js";
 
-const INSERT_SQL = `INSERT INTO audit_events
+export const INSERT_SQL = `INSERT INTO audit_events
   (id, tenant_id, at, actor_user_id, role_name_at_event, type, outcome, data_source_id, detail, ip)
 VALUES ($1, $2, $3::timestamptz, $4, $5, $6, $7, $8, $9::jsonb, $10)`;
 

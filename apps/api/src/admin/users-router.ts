@@ -216,11 +216,11 @@ adminUsersRouter.patch("/:id", requireAdminCapability, async (req: Request, res:
 
     // Emit user_role_assigned only when the roleId was explicitly changed
     if (roleId !== undefined) {
-      emitAdminAudit(req.auth!, req.ip, {
+      emitAdminAudit(req.auth!, typeof req.ip === "string" ? req.ip : undefined, {
         type: "user_role_assigned",
         outcome: "success",
         detail: { targetUserId: id, newRoleId: roleId },
-      }).catch(() => {});
+      });
     }
   } catch (err) {
     logger.error(err, "users PATCH /:id error");

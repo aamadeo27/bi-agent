@@ -49,8 +49,14 @@ auditRouter.get("/", async (req: Request, res: Response) => {
   const { from, to, type, userId, dataSourceId, page, pageSize } = parsed.data;
   const offset = (page - 1) * pageSize;
 
+  if (!req.withTenantTx) {
+    const body: ApiErrorResponse = { code: "INTERNAL", message: "Tenant context unavailable" };
+    res.status(500).json(body);
+    return;
+  }
+
   try {
-    const rows = await req.withTenantTx!<AuditRow[]>((tx) =>
+    const rows = await req.withTenantTx<AuditRow[]>((tx) =>
       tx.$queryRawUnsafe<AuditRow[]>(
         `SELECT id, tenant_id, at, actor_user_id, role_name_at_event,
                 type, outcome, data_source_id, detail, ip

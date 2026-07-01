@@ -134,7 +134,7 @@ dataSourcesRouter.post("/", async (req: Request, res: Response) => {
       outcome: "success",
       dataSourceId: id,
       detail: { action: "created", name, dsType: type },
-    }).catch(() => {});
+    });
   } catch (err) {
     logger.error(err, "data-sources POST error");
     const body: ApiErrorResponse = {
@@ -215,7 +215,7 @@ dataSourcesRouter.patch("/:id", async (req: Request, res: Response) => {
       outcome: "success",
       dataSourceId: String(id),
       detail: { action: "updated", name: updated[0].name, dsType: updated[0].type },
-    }).catch(() => {});
+    });
   } catch (err) {
     logger.error(err, "data-sources PATCH /:id error");
     const body: ApiErrorResponse = {
@@ -248,7 +248,7 @@ dataSourcesRouter.delete("/:id", async (req: Request, res: Response) => {
       outcome: "success",
       dataSourceId: String(id),
       detail: { action: "deleted" },
-    }).catch(() => {});
+    });
   } catch (err) {
     logger.error(err, "data-sources DELETE /:id error");
     const body: ApiErrorResponse = {
