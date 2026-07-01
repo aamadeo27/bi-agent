@@ -63,10 +63,12 @@ interface ChatTimelineProps {
   conversationId: string;
   /** Called whenever the streaming state changes (true = in-flight). */
   onStreamingChange?: (streaming: boolean) => void;
+  /** When true, "View query" button appears on completed system messages. */
+  canInspectQuery?: boolean;
 }
 
 export const ChatTimeline = forwardRef<ChatTimelineHandle, ChatTimelineProps>(
-  function ChatTimeline({ conversationId, onStreamingChange }, ref) {
+  function ChatTimeline({ conversationId, onStreamingChange, canInspectQuery = false }, ref) {
     const qc = useQueryClient();
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const scrollRef = useRef<HTMLDivElement>(null);
@@ -273,6 +275,8 @@ export const ChatTimeline = forwardRef<ChatTimelineHandle, ChatTimelineProps>(
                         key={msg.localId}
                         text={msg.text}
                         timestamp={msg.timestamp}
+                        messageId={msg.messageId}
+                        canInspectQuery={canInspectQuery}
                         {...(msg.envelope ? { envelope: msg.envelope } : {})}
                       />
                     );
