@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
+import { type ReactElement } from "react";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import axe from "axe-core";
@@ -7,7 +8,7 @@ import type { ResultEnvelope } from "@bi/contracts";
 import { SystemMessageBubble } from "./system-message-bubble";
 
 // ChartCard uses TanStack Query; wrap in a provider for envelope tests.
-function wrap(ui: React.ReactElement) {
+function wrap(ui: ReactElement) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(<QueryClientProvider client={qc}>{ui}</QueryClientProvider>);
 }
