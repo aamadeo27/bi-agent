@@ -70,6 +70,10 @@ function checkAskRateLimit(userId: string): boolean {
   const now = Date.now();
   const cutoff = now - ASK_RATE_LIMIT_WINDOW_MS;
   const bucket = (_askRateLimitBuckets.get(userId) ?? []).filter((t) => t > cutoff);
+  // Prune stale entry when window has fully expired — prevents unbounded Map growth.
+  if (bucket.length === 0) {
+    _askRateLimitBuckets.delete(userId);
+  }
   if (bucket.length >= ASK_RATE_LIMIT_MAX) {
     _askRateLimitBuckets.set(userId, bucket);
     return false;
