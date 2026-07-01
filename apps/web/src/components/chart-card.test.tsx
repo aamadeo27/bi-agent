@@ -5,7 +5,7 @@ import userEvent from "@testing-library/user-event";
 import axe from "axe-core";
 import { ChartCard } from "./chart-card";
 import type { ResultEnvelope } from "@bi/contracts";
-import { LARGE_RESULT_THRESHOLD } from "./charts/chart-colors";
+import { LARGE_RESULT_THRESHOLD } from "./charts";
 
 // ─── Recharts mock (no real SVG in jsdom) ────────────────────────────────────
 
@@ -173,21 +173,19 @@ describe("ChartCard — states", () => {
 
   it("renders empty state when rows is empty", () => {
     render(<ChartCard envelope={makeBarEnvelope({ rows: [], rowCount: 0 })} />);
-    expect(screen.getByTestId("empty-state")).toBeInTheDocument();
     expect(screen.getByText(/no data returned/i)).toBeInTheDocument();
   });
 
   it("renders large-result banner when rowCount > threshold", () => {
     render(<ChartCard envelope={makeLargeEnvelope()} />);
-    expect(screen.getByTestId("large-result-banner")).toBeInTheDocument();
-    expect(screen.getByText(/rows/i)).toBeInTheDocument();
+    expect(screen.getByText(/this result has/i)).toBeInTheDocument();
   });
 
   it("does not render large-result banner at or below threshold", () => {
     render(
       <ChartCard envelope={makeBarEnvelope({ rowCount: LARGE_RESULT_THRESHOLD })} />
     );
-    expect(screen.queryByTestId("large-result-banner")).not.toBeInTheDocument();
+    expect(screen.queryByText(/this result has/i)).not.toBeInTheDocument();
   });
 
   it("renders notes banner when envelope.notes is present", () => {

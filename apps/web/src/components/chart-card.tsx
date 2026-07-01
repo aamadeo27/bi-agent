@@ -1,11 +1,13 @@
 import { useState, useRef } from "react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import type { ResultEnvelope } from "@bi/contracts";
-import { BarChartView } from "./charts/bar-chart";
-import { LineChartView } from "./charts/line-chart";
-import { PieChartView } from "./charts/pie-chart";
-import { DataTableView } from "./charts/data-table";
-import { LARGE_RESULT_THRESHOLD } from "./charts/chart-colors";
+import {
+  BarChart,
+  LineChart,
+  PieChart,
+  DataTable,
+  LARGE_RESULT_THRESHOLD,
+} from "./charts";
 
 // ─── Export helpers ──────────────────────────────────────────────────────────
 
@@ -113,11 +115,23 @@ const BADGE_LABELS: Record<ResultEnvelope["chartType"], string> = {
 function ChartBody({ envelope }: { envelope: ResultEnvelope }) {
   switch (envelope.chartType) {
     case "bar":
-      return <BarChartView envelope={envelope} />;
+      return (
+        <div data-testid="bar-chart">
+          <BarChart envelope={envelope} />
+        </div>
+      );
     case "line":
-      return <LineChartView envelope={envelope} />;
+      return (
+        <div data-testid="line-chart">
+          <LineChart envelope={envelope} />
+        </div>
+      );
     case "pie":
-      return <PieChartView envelope={envelope} />;
+      return (
+        <div data-testid="pie-chart">
+          <PieChart envelope={envelope} />
+        </div>
+      );
     default:
       return null;
   }
@@ -296,21 +310,6 @@ export function ChartCard({ envelope, isLoading = false }: ChartCardProps) {
         </div>
       </div>
 
-      {/* Large-result banner */}
-      {isLarge && (
-        <div
-          role="status"
-          className="mb-3 flex items-start gap-2 rounded-md bg-semantic-info/10 border border-semantic-info/30 px-3 py-2 text-body-sm text-neutral-700"
-          data-testid="large-result-banner"
-        >
-          <InfoIcon className="w-4 h-4 mt-0.5 shrink-0 text-semantic-info" aria-hidden="true" />
-          <span>
-            This result has {envelope.rowCount.toLocaleString()} rows. The chart shows a
-            summary; export the full data as CSV or JSON.
-          </span>
-        </div>
-      )}
-
       {/* Notes banner (e.g. "downgraded to table: >2000 rows") */}
       {envelope.notes && (
         <div
@@ -332,16 +331,10 @@ export function ChartCard({ envelope, isLoading = false }: ChartCardProps) {
             aria-label="Loading chart..."
             data-testid="chart-skeleton"
           />
-        ) : envelope.rows.length === 0 ? (
-          <div
-            className="flex flex-col items-center justify-center py-12 text-body text-neutral-500"
-            data-testid="empty-state"
-          >
-            <EmptyIcon className="w-10 h-10 mb-3 text-neutral-300" aria-hidden="true" />
-            No data returned for this query.
-          </div>
         ) : showInTable ? (
-          <DataTableView envelope={envelope} />
+          <div data-testid="data-table">
+            <DataTable envelope={envelope} />
+          </div>
         ) : (
           <ChartBody envelope={envelope} />
         )}
@@ -509,25 +502,6 @@ function InfoIcon({ className }: { className?: string }) {
       <circle cx="12" cy="12" r="10" />
       <line x1="12" y1="16" x2="12" y2="12" />
       <line x1="12" y1="8" x2="12.01" y2="8" />
-    </svg>
-  );
-}
-
-function EmptyIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.5}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={className}
-    >
-      <rect x="3" y="3" width="18" height="18" rx="2" />
-      <path d="M3 9h18" />
-      <path d="M9 21V9" />
     </svg>
   );
 }

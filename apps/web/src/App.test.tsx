@@ -17,6 +17,10 @@ vi.mock("./lib/api-client", async (importOriginal) => {
       capabilities: { canInspectQuery: false, isAdmin: true },
       tenant: { id: "t1", displayName: "Acme Corp" },
     }),
+    // ChatPage (S2) conversations
+    listConversations: vi.fn().mockResolvedValue([]),
+    createConversation: vi.fn().mockResolvedValue({ id: "c-new", title: "", updatedAt: new Date().toISOString() }),
+    deleteConversation: vi.fn().mockResolvedValue(undefined),
     // Admin role CRUD
     listRoles: vi.fn().mockResolvedValue([]),
     listAdminUsers: vi.fn().mockResolvedValue([]),

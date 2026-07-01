@@ -10,7 +10,7 @@ refuses to run an epic until its listed deps are `done` here.
 | 002 | Auth & tenant isolation | email+password + per-tenant OIDC, invites, tenant-scope middleware, short-lived tokens. | done | 001 | 2 |
 | 003 | RBAC & admin | Roles, schema/table/column grants, users, capability flags; admin API + UI. | done | 001, 002 | 3 |
 | 004 | Data sources & restricted-credential proxy | Source registry, connectors (pg/mysql/bq/rest), cred vault, query proxy (L2). | done | 001, 002, 003 | 4 |
-| 005 | Ask pipeline (agent + gate) | LLM provider abstraction, orchestration, permission gate (L1), validator, chart selection, SSE streaming, conversations. | planned | 001, 002, 003, 004 | 5 |
+| 005 | Ask pipeline (agent + gate) | LLM provider abstraction, orchestration, permission gate (L1), validator, chart selection, SSE streaming, conversations. | done | 001, 002, 003, 004 | 5 |
 | 006 | Chat workspace UI | Chat SPA, streaming render, charts, chart↔table toggle, export, query inspect, block/clarification states. | planned | 001, 002, 005 | 6 |
 | 007 | Audit & observability | Persisted audit log + admin audit UI; OTel/pino monitoring hooks. | planned | 001, 002, 003, 005 | 7 |
 | 008 | Infrastructure & operations | Tenant-provisioning script, IaC stub (Cloud Run/Cloud SQL/Secret Manager/KMS), per-tenant migration guide + lint. | **deferred (post-v1)** | 001, 002 | — |

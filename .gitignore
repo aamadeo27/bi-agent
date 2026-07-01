@@ -32,6 +32,9 @@ prisma/*.db
 coverage/
 playwright-report/
 test-results/
+# Test output artifacts — teed by cmd-runner, not for version control
+vitest-out.txt
+test-output.txt
 
 # Logs — DevTeam.log is local-only monitoring (NOT committed), plus debug logs
 DevTeam.log
@@ -56,3 +59,6 @@ Thumbs.db
 # DevTeam config — not tracked per-machine
 .devteam/kkkk
 PROJECT_STATUS.md
+# generated test output
+vitest-out.txt
+test-output.txt

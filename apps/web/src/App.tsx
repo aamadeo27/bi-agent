@@ -8,6 +8,7 @@ import { RolesPage } from "./screens/admin/roles-page";
 import { PermissionEditorPage } from "./screens/admin/permission-editor-page";
 import { UsersPage } from "./screens/admin/users-page";
 import { DataSourcesPage } from "./screens/admin/data-sources-page";
+import { ChatPage } from "./screens/chat/chat-page";
 
 function PlaceholderPage({
   screenId,
@@ -32,18 +33,8 @@ function PlaceholderPage({
 // S1 is now the real LoginPage (imported from screens/login-page)
 export { LoginPage };
 
-// S2 — Chat Workspace
-// S3 (Query Inspect Drawer) and S9 (Permission Block) are overlay components
-// rendered inside this screen, not standalone routes.
-export function ChatWorkspacePage() {
-  return (
-    <PlaceholderPage
-      screenId="S2"
-      title="Chat Workspace"
-      note="S3 Query Inspect Drawer and S9 Permission Block are overlays rendered here"
-    />
-  );
-}
+// S2 — Chat Workspace (real implementation)
+export { ChatPage as ChatWorkspacePage };
 
 // S4 — Admin: Role Management (real implementation)
 export { RolesPage as AdminRolesPage };
@@ -91,8 +82,8 @@ export function App() {
       <Route path="/login" element={<LoginPage />} />
 
       {/* S2 — Chat Workspace; :conversationId is optional */}
-      <Route path="/chat" element={<ChatWorkspacePage />} />
-      <Route path="/chat/:conversationId" element={<ChatWorkspacePage />} />
+      <Route path="/chat" element={<ChatPage />} />
+      <Route path="/chat/:conversationId" element={<ChatPage />} />
 
       {/* Admin section — layout route with admin guard */}
       <Route path="/admin" element={<AdminLayout />}>

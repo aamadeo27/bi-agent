@@ -1,5 +1,5 @@
 import {
-  PieChart,
+  PieChart as RechartsPieChart,
   Pie,
   Cell,
   Tooltip,
@@ -7,72 +7,97 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import type { ResultEnvelope } from "@bi/contracts";
-import { CHART_COLORS } from "./chart-colors";
+import { CHART_PALETTE, LARGE_RESULT_THRESHOLD, TOO_MANY_CATEGORIES } from "./chart-palette";
+import { formatValue, buildChartAriaLabel } from "./chart-utils";
+import { EmptyState } from "./empty-state";
+import { LargeResultBanner } from "./large-result-banner";
+import { DataTable } from "./data-table";
 
-interface Props {
+interface PieChartProps {
   envelope: ResultEnvelope;
 }
 
-interface PieLabelProps {
+interface PieEntry {
   name: string;
   value: number;
-  percent: number;
 }
 
-export function PieChartView({ envelope }: Props) {
-  const { columns, rows } = envelope;
-  const dimCol = columns.find((c) => c.role === "dimension");
-  const measureCol = columns.find((c) => c.role === "measure");
+export function PieChart({ envelope }: PieChartProps) {
+  const { columns, rows, rowCount, truncated } = envelope;
 
-  if (!dimCol || !measureCol) return null;
+  const labelCol = columns.find((c) => c.role === "dimension" || c.role === "time");
+  const valueCol = columns.find((c) => c.role === "measure");
 
-  const data = rows.map((row) => ({
-    name: String(row[dimCol.name] ?? ""),
-    value: Number(row[measureCol.name] ?? 0),
+  if (rows.length === 0) {
+    return <EmptyState />;
+  }
+
+  // §11: auto-downgrade to table when slice count exceeds readable limit
+  if (rows.length > TOO_MANY_CATEGORIES) {
+    return (
+      <div className="flex flex-col gap-2">
+        <div
+          role="status"
+          className="flex items-center gap-2 rounded border border-semantic-info/30 bg-semantic-info/5 px-3 py-2 text-sm text-semantic-info"
+        >
+          Too many categories to chart clearly. Showing as table.
+        </div>
+        <DataTable envelope={envelope} />
+      </div>
+    );
+  }
+
+  const showBanner = truncated || rowCount > LARGE_RESULT_THRESHOLD;
+  const ariaLabel = buildChartAriaLabel("pie", columns, rows.length);
+
+  const data: PieEntry[] = rows.map((row) => ({
+    name: labelCol ? formatValue(row[labelCol.name]) : "–",
+    value: valueCol ? Number(row[valueCol.name] ?? 0) : 0,
   }));
 
-  const total = data.reduce((s, d) => s + d.value, 0);
-
-  const renderCustomLabel = ({ name, value, percent }: PieLabelProps) =>
-    `${name}: ${value.toLocaleString(undefined, { maximumFractionDigits: 2 })} (${(percent * 100).toFixed(1)}%)`;
-
-  const summary = `Pie chart: ${measureCol.name} by ${dimCol.name}. ${data.length} slices. Use the Table view button to see the full data.`;
+  const total = data.reduce((sum, d) => sum + d.value, 0);
 
   return (
-    <div
-      role="img"
-      aria-label={summary}
-      className="w-full h-64"
-      data-testid="pie-chart"
-    >
-      <ResponsiveContainer width="100%" height="100%">
-        <PieChart>
-          <Pie
-            data={data}
-            dataKey="value"
-            nameKey="name"
-            cx="50%"
-            cy="50%"
-            outerRadius={90}
-            label={renderCustomLabel}
-          >
-            {data.map((entry, i) => (
-              <Cell
-                key={entry.name}
-                fill={CHART_COLORS[i % CHART_COLORS.length]}
-                aria-label={`${entry.name}: ${entry.value.toLocaleString(undefined, { maximumFractionDigits: 2 })} (${total > 0 ? ((entry.value / total) * 100).toFixed(1) : 0}%)`}
-                tabIndex={0}
-              />
-            ))}
-          </Pie>
-          <Tooltip
-            formatter={(value: number) =>
-              value.toLocaleString(undefined, { maximumFractionDigits: 2 })
-            }
-          />
-          <Legend />
-        </PieChart>
-      </ResponsiveContainer>
+    <div className="flex flex-col gap-2">
+      {showBanner && <LargeResultBanner rowCount={rowCount} />}
+      <div role="img" aria-label={ariaLabel}>
+        <ResponsiveContainer width="100%" height={320}>
+          <RechartsPieChart accessibilityLayer>
+            <Pie
+              data={data}
+              dataKey="value"
+              nameKey="name"
+              cx="50%"
+              cy="50%"
+              innerRadius="30%"
+              outerRadius="60%"
+              paddingAngle={2}
+              label={({ name, value, percent }) =>
+                `${name}: ${formatValue(value)} (${((percent ?? 0) * 100).toFixed(1)}%)`
+              }
+              labelLine={false}
+            >
+              {data.map((entry, i) => {
+                const pct = total > 0 ? ((entry.value / total) * 100).toFixed(1) : "0.0";
+                return (
+                  <Cell
+                    key={`cell-${i}`}
+                    fill={CHART_PALETTE[i % CHART_PALETTE.length]}
+                    aria-label={`${entry.name}: ${formatValue(entry.value)} (${pct}%)`}
+                  />
+                );
+              })}
+            </Pie>
+            <Tooltip
+              formatter={(value, name) => [
+                formatValue(value as number),
+                String(name),
+              ]}
+            />
+            <Legend />
+          </RechartsPieChart>
+        </ResponsiveContainer>
+      </div>
     </div>
   );
 }

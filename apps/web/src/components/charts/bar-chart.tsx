@@ -1,5 +1,5 @@
 import {
-  BarChart,
+  BarChart as RechartsBarChart,
   Bar,
   XAxis,
   YAxis,
@@ -9,51 +9,77 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import type { ResultEnvelope } from "@bi/contracts";
-import { CHART_COLORS } from "./chart-colors";
+import { CHART_PALETTE, LARGE_RESULT_THRESHOLD, TOO_MANY_CATEGORIES } from "./chart-palette";
+import { formatValue, buildChartAriaLabel } from "./chart-utils";
+import { EmptyState } from "./empty-state";
+import { LargeResultBanner } from "./large-result-banner";
+import { DataTable } from "./data-table";
 
-interface Props {
+interface BarChartProps {
   envelope: ResultEnvelope;
 }
 
-function fmtValue(v: number | string | null): string {
-  if (typeof v === "number") return v.toLocaleString(undefined, { maximumFractionDigits: 2 });
-  return String(v ?? "");
-}
+export function BarChart({ envelope }: BarChartProps) {
+  const { columns, rows, rowCount, truncated } = envelope;
 
-export function BarChartView({ envelope }: Props) {
-  const { columns, rows } = envelope;
-  const dimCol = columns.find((c) => c.role === "dimension" || c.role === "time");
+  const dimensionCol = columns.find((c) => c.role === "dimension" || c.role === "time");
   const measureCols = columns.filter((c) => c.role === "measure");
 
-  const summary = `Bar chart: ${dimCol?.name ?? "data"} by ${measureCols.map((c) => c.name).join(", ")}. ${rows.length} data points. Use the Table view button to see the full data.`;
+  if (rows.length === 0) {
+    return <EmptyState />;
+  }
+
+  // §11: auto-downgrade to table when bar count exceeds readable limit
+  if (rows.length > TOO_MANY_CATEGORIES) {
+    return (
+      <div className="flex flex-col gap-2">
+        <div
+          role="status"
+          className="flex items-center gap-2 rounded border border-semantic-info/30 bg-semantic-info/5 px-3 py-2 text-sm text-semantic-info"
+        >
+          Too many categories to chart clearly. Showing as table.
+        </div>
+        <DataTable envelope={envelope} />
+      </div>
+    );
+  }
+
+  const showBanner = truncated || rowCount > LARGE_RESULT_THRESHOLD;
+  const ariaLabel = buildChartAriaLabel("bar", columns, rows.length);
 
   return (
-    <div
-      role="img"
-      aria-label={summary}
-      className="w-full h-64"
-      data-testid="bar-chart"
-    >
-      <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={rows} margin={{ top: 8, right: 16, bottom: 8, left: 8 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#D1D5DB" />
-          {dimCol && <XAxis dataKey={dimCol.name} tick={{ fontSize: 12 }} />}
-          <YAxis tick={{ fontSize: 12 }} />
-          <Tooltip
-            formatter={(value: number | string, name: string) => [fmtValue(value as number | string | null), name]}
-          />
-          {measureCols.length > 1 && <Legend />}
-          {measureCols.map((col, i) => (
-            <Bar
-              key={col.name}
-              dataKey={col.name}
-              fill={CHART_COLORS[i % CHART_COLORS.length]}
-              tabIndex={0}
-              aria-label={`${col.name} series`}
+    <div className="flex flex-col gap-2">
+      {showBanner && <LargeResultBanner rowCount={rowCount} />}
+      <div role="img" aria-label={ariaLabel}>
+        <ResponsiveContainer width="100%" height={320}>
+          <RechartsBarChart
+            data={rows as Record<string, string | number>[]}
+            margin={{ top: 8, right: 16, left: 0, bottom: 8 }}
+            accessibilityLayer
+          >
+            <CartesianGrid strokeDasharray="3 3" stroke="#D1D5DB" />
+            {dimensionCol && (
+              <XAxis dataKey={dimensionCol.name} tick={{ fontSize: 12 }} />
+            )}
+            <YAxis tick={{ fontSize: 12 }} tickFormatter={(v) => formatValue(v as number)} />
+            <Tooltip
+              formatter={(value, name) => [
+                formatValue(value as number),
+                String(name),
+              ]}
             />
-          ))}
-        </BarChart>
-      </ResponsiveContainer>
+            <Legend />
+            {measureCols.map((col, i) => (
+              <Bar
+                key={col.name}
+                dataKey={col.name}
+                fill={CHART_PALETTE[i % CHART_PALETTE.length]}
+                radius={[2, 2, 0, 0]}
+              />
+            ))}
+          </RechartsBarChart>
+        </ResponsiveContainer>
+      </div>
     </div>
   );
 }
