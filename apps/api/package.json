@@ -25,6 +25,13 @@
     "@google-cloud/bigquery": "^7.9.0",
     "@google/genai": "^1.0.0",
     "@node-rs/argon2": "^2.0.2",
+    "@opentelemetry/api": "^1.9.0",
+    "@opentelemetry/exporter-metrics-otlp-http": "^0.57.0",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.57.0",
+    "@opentelemetry/resources": "^1.30.0",
+    "@opentelemetry/sdk-metrics": "^1.30.0",
+    "@opentelemetry/sdk-node": "^0.57.0",
+    "@opentelemetry/semantic-conventions": "^1.28.0",
     "@prisma/client": "^5.22.0",
     "@sentry/node": "^10.58.0",
     "argon2": "^0.31.2",
@@ -40,6 +47,8 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@opentelemetry/sdk-trace-base": "^1.30.0",
+    "@opentelemetry/sdk-trace-node": "^1.30.0",
     "@testcontainers/mysql": "^10.0.0",
     "eslint": "^9.13.0",
     "@testcontainers/postgresql": "^10.0.0",

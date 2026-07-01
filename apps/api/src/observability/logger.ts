@@ -68,3 +68,27 @@ const options: LoggerOptions = isDevelopment
 export const logger: Logger = pino(options);
 
 export type { Logger };
+
+/**
+ * Context fields attached to every log line within a request.
+ * These satisfy the monitoring-direction §"Standing requirements":
+ * tenantId / userId / roleName / requestId must appear on every span/log.
+ */
+export interface RequestLogContext {
+  tenantId: string;
+  userId: string;
+  roleId: string;
+  requestId: string;
+  roleName?: string;
+}
+
+/**
+ * Returns a child logger pre-bound with the request context fields.
+ * Use this throughout a single pipeline invocation instead of the root logger
+ * so every log line automatically carries tenantId / userId / requestId.
+ *
+ * The fields are safe to log (no credentials or row data).
+ */
+export function createRequestLogger(ctx: RequestLogContext): Logger {
+  return logger.child(ctx);
+}

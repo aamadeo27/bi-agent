@@ -4,6 +4,7 @@ import { logger } from "./observability/logger.js";
 import { httpLogger } from "./observability/http-logger.js";
 import { errorHandler } from "./observability/error-middleware.js";
 import { initErrorSink } from "./observability/error-sink.js";
+import { initOtel } from "./observability/otel.js";
 import { authMiddleware, initAuth } from "./middleware/auth.js";
 import { tenantScopeMiddleware } from "./middleware/tenant-scope.js";
 import { meRouter } from "./me/index.js";
@@ -13,6 +14,10 @@ import { rolesRouter, requireAdminCapability, schemaRouter, dataSourcesRouter, a
 import { conversationsRouter } from "./conversations/router.js";
 import { messagesRouter } from "./messages/router.js";
 import { startRetentionScheduler } from "./conversations/retention-scheduler.js";
+
+// Initialize OTel traces + metrics (config-driven; no-op when endpoint absent).
+// Must run before any route handlers so instruments bind to the live provider.
+initOtel();
 
 // Initialize the dev-only error-tracking sink. No-ops gracefully when
 // SENTRY_DSN is unset (the default in dev/bootstrap) — see error-sink.ts.
