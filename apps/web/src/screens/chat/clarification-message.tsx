@@ -1,17 +1,18 @@
 import { renderMarkdown } from "./markdown-renderer";
 
 interface ClarificationMessageProps {
-  /** Streamed clarification text from the LLM. */
+  /** Streamed clarification text from the LLM (already complete at render time). */
   text: string;
-  /** Shows blinking cursor while the clarification is still streaming. */
-  isStreaming?: boolean;
 }
 
 /**
  * ClarificationMessage — shown when the LLM cannot interpret the query.
  * Variant of SystemMessageBubble with semantic-warning left border.
+ *
+ * Note: this component is only rendered after the terminal CLARIFICATION error
+ * event, so the stream is always finished by this point — no streaming cursor needed.
  */
-export function ClarificationMessage({ text, isStreaming = false }: ClarificationMessageProps) {
+export function ClarificationMessage({ text }: ClarificationMessageProps) {
   return (
     <div
       className="flex items-start gap-3"
@@ -33,15 +34,9 @@ export function ClarificationMessage({ text, isStreaming = false }: Clarificatio
           <h3 className="text-heading-2 text-neutral-900">I need more information</h3>
         </div>
 
-        {/* Body — streamed clarification text */}
+        {/* Body — clarification text */}
         <div className="text-body text-neutral-900">
           {renderMarkdown(text)}
-          {isStreaming && (
-            <span
-              className="ml-0.5 inline-block h-4 w-0.5 animate-blink bg-neutral-900"
-              aria-hidden="true"
-            />
-          )}
         </div>
       </div>
     </div>

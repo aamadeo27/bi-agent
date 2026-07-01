@@ -416,4 +416,28 @@ describe("ChatTimeline — axe", () => {
       `Critical violations: ${JSON.stringify(critical.map((v) => v.id))}`,
     ).toHaveLength(0);
   });
+
+  it("has no critical a11y violations with ClarificationMessage", async () => {
+    vi.mocked(connectSse).mockReturnValue(() => {});
+    const { container, ref } = renderTimeline();
+    act(() => {
+      ref.current!.send("Ambiguous query");
+    });
+    act(() => {
+      const h = captureHandlers();
+      h.token?.({ delta: "Could you clarify what time period?" });
+      h.error?.({ code: "CLARIFICATION", message: "" });
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId("clarification-message")).toBeInTheDocument(),
+    );
+    const results = await axe.run(container);
+    const critical = results.violations.filter(
+      (v) => v.impact === "critical" || v.impact === "serious",
+    );
+    expect(
+      critical,
+      `Critical violations: ${JSON.stringify(critical.map((v) => v.id))}`,
+    ).toHaveLength(0);
+  });
 });

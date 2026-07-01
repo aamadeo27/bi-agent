@@ -11,6 +11,8 @@ interface SystemMessageBubbleProps {
   envelope?: ResultEnvelope;
   /** Generic error message shown inside the bubble. */
   errorMsg?: string;
+  /** Optional receive time shown on hover (e.g. "2:30 PM"). */
+  timestamp?: string;
 }
 
 /**
@@ -22,10 +24,11 @@ export function SystemMessageBubble({
   isStreaming = false,
   envelope,
   errorMsg,
+  timestamp,
 }: SystemMessageBubbleProps) {
   return (
     <div
-      className="flex items-start gap-3"
+      className="group flex items-start gap-3"
       data-testid="system-message-bubble"
     >
       {/* Bot avatar */}
@@ -36,34 +39,46 @@ export function SystemMessageBubble({
         <span className="text-label text-white">BI</span>
       </div>
 
-      {/* Bubble */}
-      <div className="flex w-full max-w-[85%] flex-col gap-3 rounded-lg border border-neutral-300 bg-white px-4 py-3">
-        {/* Text content */}
-        {(text || isStreaming) && (
-          <div className="text-body-lg text-neutral-900">
-            {renderMarkdown(text)}
-            {isStreaming && (
-              <span
-                className="ml-0.5 inline-block h-4 w-0.5 animate-blink bg-neutral-900"
-                aria-hidden="true"
-              />
-            )}
-          </div>
-        )}
+      {/* Bubble + timestamp */}
+      <div className="flex w-full max-w-[85%] flex-col gap-1">
+        <div className="flex flex-col gap-3 rounded-lg border border-neutral-300 bg-white px-4 py-3">
+          {/* Text content */}
+          {(text || isStreaming) && (
+            <div className="text-body-lg text-neutral-900">
+              {renderMarkdown(text)}
+              {isStreaming && (
+                <span
+                  className="ml-0.5 inline-block h-4 w-0.5 animate-blink bg-neutral-900"
+                  aria-hidden="true"
+                />
+              )}
+            </div>
+          )}
 
-        {/* Error message */}
-        {errorMsg && (
-          <p
-            className="text-body-sm text-semantic-error"
-            role="alert"
-            data-testid="error-message"
+          {/* Error message */}
+          {errorMsg && (
+            <p
+              className="text-body-sm text-semantic-error"
+              role="alert"
+              data-testid="error-message"
+            >
+              {errorMsg}
+            </p>
+          )}
+
+          {/* Chart card — rendered when result envelope is available */}
+          {envelope && <ChartCard envelope={envelope} />}
+        </div>
+
+        {/* Timestamp — revealed on row hover */}
+        {timestamp && (
+          <span
+            className="invisible text-body-sm text-neutral-500 group-hover:visible"
+            aria-label={`Received at ${timestamp}`}
           >
-            {errorMsg}
-          </p>
+            {timestamp}
+          </span>
         )}
-
-        {/* Chart card — rendered when result envelope is available */}
-        {envelope && <ChartCard envelope={envelope} />}
       </div>
     </div>
   );

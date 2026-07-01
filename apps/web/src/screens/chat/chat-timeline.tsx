@@ -22,18 +22,19 @@ export type ChatMessage =
       kind: "user";
       localId: string;
       text: string;
+      timestamp: string;
     }
   | {
       kind: "system";
       localId: string;
       messageId: string | null;
       /**
-       * pending    — StreamingIndicator (before first token)
-       * streaming  — SystemMessageBubble with cursor
-       * complete   — SystemMessageBubble with optional ChartCard
-       * blocked    — PermissionBlockMessage
-       * clarification — ClarificationMessage (may still stream)
-       * error      — SystemMessageBubble with errorMsg
+       * pending        — StreamingIndicator (before first token)
+       * streaming      — SystemMessageBubble with cursor
+       * complete       — SystemMessageBubble with optional ChartCard
+       * blocked        — PermissionBlockMessage
+       * clarification  — ClarificationMessage (terminal; streaming already ended)
+       * error          — SystemMessageBubble with errorMsg
        */
       status:
         | "pending"
@@ -43,6 +44,7 @@ export type ChatMessage =
         | "clarification"
         | "error";
       text: string;
+      timestamp: string;
       envelope?: ResultEnvelope;
       block?: PermissionBlock;
       errorMsg?: string;
@@ -53,13 +55,6 @@ export type ChatMessage =
 export interface ChatTimelineHandle {
   /** Submit a user message and start the SSE stream. */
   send: (text: string) => void;
-}
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
-let nextId = 0;
-function uid() {
-  return `local-${++nextId}`;
 }
 
 // ─── ChatTimeline ─────────────────────────────────────────────────────────────
@@ -78,6 +73,8 @@ export const ChatTimeline = forwardRef<ChatTimelineHandle, ChatTimelineProps>(
     const userScrolledRef = useRef(false);
     const [showFab, setShowFab] = useState(false);
     const cleanupRef = useRef<(() => void) | null>(null);
+    // Per-instance ID counter — isolated between component instances and test renders.
+    const nextIdRef = useRef(0);
 
     // Reset messages when conversation changes
     useEffect(() => {
@@ -121,21 +118,6 @@ export const ChatTimeline = forwardRef<ChatTimelineHandle, ChatTimelineProps>(
       setShowFab(false);
     }
 
-    // ─── Update helpers ───────────────────────────────────────────────────────
-
-    function updateSystem(
-      localId: string,
-      patch: Partial<Extract<ChatMessage, { kind: "system" }>>,
-    ) {
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.kind === "system" && m.localId === localId
-            ? { ...m, ...patch }
-            : m,
-        ),
-      );
-    }
-
     // ─── send ─────────────────────────────────────────────────────────────────
 
     const send = useCallback(
@@ -143,26 +125,44 @@ export const ChatTimeline = forwardRef<ChatTimelineHandle, ChatTimelineProps>(
         // Abort any prior in-flight stream
         cleanupRef.current?.();
 
-        const userLocalId = uid();
-        const systemLocalId = uid();
+        // Per-instance IDs — not module-level, so test runs stay isolated.
+        const userLocalId = `local-${++nextIdRef.current}`;
+        const systemLocalId = `local-${++nextIdRef.current}`;
+        const timestamp = new Date().toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+        });
 
         setMessages((prev) => [
           ...prev,
-          { kind: "user", localId: userLocalId, text },
+          { kind: "user", localId: userLocalId, text, timestamp },
           {
             kind: "system",
             localId: systemLocalId,
             messageId: null,
             status: "pending",
             text: "",
+            timestamp,
           },
         ]);
 
         onStreamingChange?.(true);
 
+        // Inlined update helper — setMessages is stable, so capturing it is safe.
+        const patchSystem = (
+          patch: Partial<Extract<ChatMessage, { kind: "system" }>>,
+        ) =>
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.kind === "system" && m.localId === systemLocalId
+                ? { ...m, ...patch }
+                : m,
+            ),
+          );
+
         const cleanup = connectSse(conversationId, text, {
           meta: ({ messageId }) => {
-            updateSystem(systemLocalId, { messageId });
+            patchSystem({ messageId });
           },
 
           token: ({ delta }) => {
@@ -180,27 +180,19 @@ export const ChatTimeline = forwardRef<ChatTimelineHandle, ChatTimelineProps>(
           },
 
           result: ({ envelope }) => {
-            updateSystem(systemLocalId, {
-              status: "complete",
-              envelope,
-              messageId: envelope.messageId,
-            });
+            patchSystem({ status: "complete", envelope, messageId: envelope.messageId });
             // Cache in TanStack Query — backs toggle/export (GAP-13)
             qc.setQueryData(["message-result", envelope.messageId], envelope);
           },
 
           block: ({ block }) => {
-            updateSystem(systemLocalId, {
-              status: "blocked",
-              block,
-              messageId: block.messageId,
-            });
+            patchSystem({ status: "blocked", block, messageId: block.messageId });
             onStreamingChange?.(false);
           },
 
           error: ({ code, message }) => {
             const isClarification = code === "CLARIFICATION";
-            updateSystem(systemLocalId, {
+            patchSystem({
               status: isClarification ? "clarification" : "error",
               ...(isClarification ? {} : { errorMsg: message }),
             });
@@ -251,7 +243,13 @@ export const ChatTimeline = forwardRef<ChatTimelineHandle, ChatTimelineProps>(
             <div className="mx-auto flex max-w-3xl flex-col gap-4">
               {messages.map((msg) => {
                 if (msg.kind === "user") {
-                  return <MessageBubble key={msg.localId} text={msg.text} />;
+                  return (
+                    <MessageBubble
+                      key={msg.localId}
+                      text={msg.text}
+                      timestamp={msg.timestamp}
+                    />
+                  );
                 }
 
                 // System messages
@@ -264,6 +262,7 @@ export const ChatTimeline = forwardRef<ChatTimelineHandle, ChatTimelineProps>(
                       <SystemMessageBubble
                         key={msg.localId}
                         text={msg.text}
+                        timestamp={msg.timestamp}
                         isStreaming
                       />
                     );
@@ -273,6 +272,7 @@ export const ChatTimeline = forwardRef<ChatTimelineHandle, ChatTimelineProps>(
                       <SystemMessageBubble
                         key={msg.localId}
                         text={msg.text}
+                        timestamp={msg.timestamp}
                         {...(msg.envelope ? { envelope: msg.envelope } : {})}
                       />
                     );
@@ -286,11 +286,12 @@ export const ChatTimeline = forwardRef<ChatTimelineHandle, ChatTimelineProps>(
                     ) : null;
 
                   case "clarification":
+                    // isStreaming omitted — CLARIFICATION is a terminal event;
+                    // streaming is always over by the time this state is set.
                     return (
                       <ClarificationMessage
                         key={msg.localId}
                         text={msg.text}
-                        isStreaming={false}
                       />
                     );
 
@@ -299,6 +300,7 @@ export const ChatTimeline = forwardRef<ChatTimelineHandle, ChatTimelineProps>(
                       <SystemMessageBubble
                         key={msg.localId}
                         text={msg.text}
+                        timestamp={msg.timestamp}
                         errorMsg={msg.errorMsg ?? "An error occurred."}
                       />
                     );
