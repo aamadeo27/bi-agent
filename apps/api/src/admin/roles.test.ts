@@ -1,10 +1,18 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import express, { type Application } from "express";
 import request from "supertest";
 import type { Prisma } from "@prisma/client";
 import type { AuthContext } from "../middleware/auth.js";
 import { rolesRouter } from "./roles-router.js";
 import { requireAdminCapability } from "./require-admin.js";
+
+// ── Audit mock ────────────────────────────────────────────────────────────────
+
+vi.mock("../audit/index.js", () => ({
+  emitAdminAudit: vi.fn().mockResolvedValue(undefined),
+}));
+
+import { emitAdminAudit } from "../audit/index.js";
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -373,5 +381,57 @@ describe("tenant isolation", () => {
 
     expect(res.status).toBe(403);
     expect(res.body.code).toBe("TENANT");
+  });
+});
+
+// ── Audit emission call-site tests ────────────────────────────────────────────
+
+describe("audit emission on role mutations", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("emits role_changed audit when PATCH /:id succeeds", async () => {
+    let callCount = 0;
+    const updated = { ...ROLE_ROW, name: "Editors" };
+    const app = buildRouterApp(ADMIN_AUTH, () => {
+      callCount++;
+      return callCount === 1 ? [ROLE_ROW] : [updated];
+    });
+
+    const res = await request(app)
+      .patch("/api/admin/roles/role-1")
+      .send({ name: "Editors" });
+
+    expect(res.status).toBe(200);
+    expect(vi.mocked(emitAdminAudit)).toHaveBeenCalledOnce();
+    expect(vi.mocked(emitAdminAudit)).toHaveBeenCalledWith(
+      ADMIN_AUTH,
+      expect.anything(), // req.ip value depends on test environment
+      expect.objectContaining({ type: "role_changed", outcome: "success" }),
+    );
+  });
+
+  it("does NOT emit role_changed audit when PATCH /:id returns 404", async () => {
+    const app = buildRouterApp(ADMIN_AUTH, () => []); // role not found
+    await request(app).patch("/api/admin/roles/no-such-id").send({ name: "X" });
+    expect(vi.mocked(emitAdminAudit)).not.toHaveBeenCalled();
+  });
+
+  it("emits permission_changed audit when PUT /:id/grants succeeds", async () => {
+    const app = buildRouterApp(ADMIN_AUTH, (sql) => {
+      if (/SELECT.*FROM\s+roles\s+WHERE/i.test(sql)) return [{ id: "role-1" }];
+      return []; // INSERT per grant
+    });
+
+    const res = await request(app)
+      .put("/api/admin/roles/role-1/grants")
+      .send([]);
+
+    expect(res.status).toBe(200);
+    expect(vi.mocked(emitAdminAudit)).toHaveBeenCalledOnce();
+    expect(vi.mocked(emitAdminAudit)).toHaveBeenCalledWith(
+      ADMIN_AUTH,
+      expect.anything(),
+      expect.objectContaining({ type: "permission_changed", outcome: "success" }),
+    );
   });
 });

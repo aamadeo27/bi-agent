@@ -8,6 +8,7 @@ import { consoleMailer } from "../mailer/console-adapter.js";
 import { getPrisma } from "../db/client.js";
 import { logger } from "../observability/logger.js";
 import { requireAdminCapability } from "./require-admin.js";
+import { emitAdminAudit } from "../audit/index.js";
 
 export const adminUsersRouter: ExpressRouter = Router();
 
@@ -212,6 +213,15 @@ adminUsersRouter.patch("/:id", requireAdminCapability, async (req: Request, res:
     await getPrisma().user.update({ where: { id: id as string }, data: platformData });
 
     res.json(mapUserRow(updated[0]));
+
+    // Emit user_role_assigned only when the roleId was explicitly changed
+    if (roleId !== undefined) {
+      emitAdminAudit(req.auth!, typeof req.ip === "string" ? req.ip : undefined, {
+        type: "user_role_assigned",
+        outcome: "success",
+        detail: { targetUserId: id, newRoleId: roleId },
+      });
+    }
   } catch (err) {
     logger.error(err, "users PATCH /:id error");
     const body: ApiErrorResponse = { code: "INTERNAL", message: "Failed to update user" };
