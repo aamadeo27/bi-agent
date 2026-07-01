@@ -65,6 +65,16 @@ const config: Config = {
         mono: ["0.8125rem", { lineHeight: "1.6", fontWeight: "400" }],
         label: ["0.6875rem", { lineHeight: "1.4", fontWeight: "600" }],
       },
+      // Cursor blink animation for streaming text
+      animation: {
+        blink: "blink 1s step-end infinite",
+      },
+      keyframes: {
+        blink: {
+          "0%, 100%": { opacity: "1" },
+          "50%": { opacity: "0" },
+        },
+      },
       // §3 Border radius tokens
       borderRadius: {
         sm: "4px",

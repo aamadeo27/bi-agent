@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useNavigate, Navigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -12,6 +12,7 @@ import { clearAccessToken } from "../../lib/auth-store";
 import { ConversationSidebar } from "./conversation-sidebar";
 import { TopNavBar } from "./top-nav-bar";
 import { InputBar } from "./input-bar";
+import { ChatTimeline, type ChatTimelineHandle } from "./chat-timeline";
 
 // ─── Welcome / empty state ────────────────────────────────────────────────────
 
@@ -80,6 +81,10 @@ export function ChatPage() {
   const [localTitle, setLocalTitle] = useState("");
   // Controlled input value — allows WelcomeState chips to populate the input.
   const [inputText, setInputText] = useState("");
+  // Tracks whether an SSE stream is in-flight (disables input bar send button).
+  const [isStreaming, setIsStreaming] = useState(false);
+  // Ref to the timeline's imperative send() method.
+  const timelineRef = useRef<ChatTimelineHandle>(null);
 
   // Reset local title override whenever the user navigates to a different conversation
   useEffect(() => {
@@ -139,15 +144,14 @@ export function ChatPage() {
     deleteMutation.mutate(id);
   }
 
-  // T6.2 wires this to SSE message submission.
-  // For now: if no conversation is active, create one so navigation lands on a valid id.
-  // The message text is cleared here; T6.2 must capture it before clearing.
-  function handleSend(_text: string) {
+  function handleSend(text: string) {
     if (!conversationId) {
+      // No active conversation — create one first; user re-sends after navigation.
       createMutation.mutate();
+      return;
     }
-    // T6.2 replaces this stub with the SSE call using `_text`.
     setInputText("");
+    timelineRef.current?.send(text);
   }
 
   const handleSignOut = useCallback(async () => {
@@ -215,21 +219,20 @@ export function ChatPage() {
           onToggleSidebar={() => setSidebarOpen((p) => !p)}
         />
 
-        {/* Chat timeline (T6.2 populates this area with messages) */}
+        {/* Chat timeline */}
         <main
           id="chat-main"
-          className="flex-1 overflow-y-auto"
+          className="flex-1 overflow-hidden"
           aria-label="Chat timeline"
         >
           {!conversationId ? (
             <WelcomeState onChipClick={(text) => setInputText(text)} />
           ) : (
-            /* Placeholder: T6.2 renders the message timeline here */
-            <div className="flex h-full items-center justify-center">
-              <p className="text-body text-neutral-500">
-                No messages yet. Ask a question below.
-              </p>
-            </div>
+            <ChatTimeline
+              ref={timelineRef}
+              conversationId={conversationId}
+              onStreamingChange={setIsStreaming}
+            />
           )}
         </main>
 
@@ -238,7 +241,7 @@ export function ChatPage() {
           value={inputText}
           onChange={setInputText}
           onSend={handleSend}
-          isStreaming={false}
+          isStreaming={isStreaming}
         />
       </div>
 
