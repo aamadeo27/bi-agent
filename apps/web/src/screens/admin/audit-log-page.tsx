@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { AuditEvent, AuditEventType } from "@bi/contracts";
 import { getAuditLog, listDataSources } from "../../lib/api-client";
@@ -110,8 +110,8 @@ function DetailPanel({ event }: { event: AuditEvent }) {
             </dt>
             <dd>
               <ul className="mt-1 list-disc list-inside text-body-sm text-semantic-error">
-                {missing.map((m, i) => (
-                  <li key={i}>{String(m)}</li>
+                {missing.map((m) => (
+                  <li key={String(m)}>{String(m)}</li>
                 ))}
               </ul>
             </dd>
@@ -139,6 +139,29 @@ interface EventTypeSelectProps {
 
 function EventTypeSelect({ selected, onChange }: EventTypeSelectProps) {
   const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Close on outside click
+  useEffect(() => {
+    if (!open) return;
+    function handleOutside(e: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleOutside);
+    return () => document.removeEventListener("mousedown", handleOutside);
+  }, [open]);
+
+  // Close on Escape
+  useEffect(() => {
+    if (!open) return;
+    function handleKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("keydown", handleKey);
+    return () => document.removeEventListener("keydown", handleKey);
+  }, [open]);
 
   function toggle(type: AuditEventType) {
     if (selected.includes(type)) {
@@ -156,7 +179,7 @@ function EventTypeSelect({ selected, onChange }: EventTypeSelectProps) {
         : `${selected.length} types selected`;
 
   return (
-    <div className="relative">
+    <div className="relative" ref={containerRef}>
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
@@ -267,7 +290,9 @@ function exportToCsv(events: AuditEvent[]) {
   const link = document.createElement("a");
   link.href = url;
   link.download = `audit-log-${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(link);
   link.click();
+  document.body.removeChild(link);
   URL.revokeObjectURL(url);
 }
 
@@ -332,10 +357,7 @@ function FilterBar({ filters, onChange, dataSources }: FilterBarProps) {
 
       {/* Event type multi-select */}
       <div className="flex flex-col gap-1">
-        <span
-          id="audit-event-type-label"
-          className="text-body-sm font-semibold text-neutral-600"
-        >
+        <span className="text-body-sm font-semibold text-neutral-600">
           Event type
         </span>
         <EventTypeSelect
@@ -563,6 +585,15 @@ function buildDescription(event: AuditEvent): string {
   }
 }
 
+// Pure helper — looks up a data source name by id from a list.
+function lookupDsName(
+  id: string | undefined,
+  sources: { id: string; name: string }[],
+): string | undefined {
+  if (!id) return undefined;
+  return sources.find((ds) => ds.id === id)?.name;
+}
+
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export function AuditLogPage() {
@@ -575,6 +606,7 @@ export function AuditLogPage() {
   });
   const [page, setPage] = useState(1);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
 
   const handleFiltersChange = useCallback((f: Filters) => {
     setFilters(f);
@@ -609,13 +641,24 @@ export function AuditLogPage() {
   const total = data?.total ?? 0;
   const dataSources = dsQuery.data ?? [];
 
-  function dsName(id: string | undefined): string | undefined {
-    if (!id) return undefined;
-    return dataSources.find((ds) => ds.id === id)?.name;
-  }
-
-  function handleExport() {
-    exportToCsv(events);
+  async function handleExport() {
+    setIsExporting(true);
+    try {
+      // Fetch all filtered results (no pagination) for a complete export
+      const allParams: AuditLogParams = {
+        ...(filters.from ? { from: filters.from } : {}),
+        ...(filters.to ? { to: filters.to } : {}),
+        ...(filters.types.length ? { type: filters.types } : {}),
+        ...(filters.userId.trim() ? { userId: filters.userId.trim() } : {}),
+        ...(filters.dataSourceId ? { dataSourceId: filters.dataSourceId } : {}),
+        page: 1,
+        pageSize: 10_000,
+      };
+      const result = await getAuditLog(allParams);
+      exportToCsv(result.events);
+    } finally {
+      setIsExporting(false);
+    }
   }
 
   const isLoading = auditQuery.isPending;
@@ -629,16 +672,16 @@ export function AuditLogPage() {
         <h1 className="text-heading-1 text-neutral-900">Audit Log</h1>
         <button
           type="button"
-          onClick={handleExport}
-          disabled={events.length === 0}
-          aria-disabled={events.length === 0}
+          onClick={() => void handleExport()}
+          disabled={events.length === 0 || isExporting}
+          aria-disabled={events.length === 0 || isExporting}
           className="inline-flex items-center gap-2 rounded-md border border-neutral-300 bg-white px-4 py-2 text-body font-medium text-neutral-700
             transition-colors hover:bg-neutral-50
             focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2
             disabled:cursor-not-allowed disabled:opacity-40"
         >
           <span aria-hidden="true">↓</span>
-          Export CSV
+          {isExporting ? "Exporting…" : "Export CSV"}
         </button>
       </div>
 
@@ -745,7 +788,7 @@ export function AuditLogPage() {
                     onToggle={() =>
                       setExpandedId((prev) => (prev === event.id ? null : event.id))
                     }
-                    dataSourceName={dsName(event.dataSourceId)}
+                    dataSourceName={lookupDsName(event.dataSourceId, dataSources)}
                   />
                 ))}
               </tbody>

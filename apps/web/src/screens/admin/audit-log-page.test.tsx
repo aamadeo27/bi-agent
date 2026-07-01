@@ -327,6 +327,24 @@ describe("AuditLogPage — filters", () => {
     );
   });
 
+  it("passes event type filter to API", async () => {
+    mockGetAuditLog.mockResolvedValue(makeResponse([]));
+    const user = userEvent.setup();
+    renderPage();
+
+    await waitFor(() => expect(mockGetAuditLog).toHaveBeenCalled());
+
+    // Open the event-type multi-select and pick "Query blocked"
+    await user.click(screen.getByRole("button", { name: "Filter by event type" }));
+    await user.click(screen.getByRole("option", { name: "Query blocked" }));
+
+    await waitFor(() =>
+      expect(mockGetAuditLog).toHaveBeenCalledWith(
+        expect.objectContaining({ type: ["query_blocked"] }),
+      ),
+    );
+  });
+
   it("passes dataSourceId filter to API", async () => {
     mockGetAuditLog.mockResolvedValue(makeResponse([]));
     const user = userEvent.setup();
