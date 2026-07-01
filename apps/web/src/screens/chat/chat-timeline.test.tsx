@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createRef, act } from "react";
 import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import axe from "axe-core";
 import type { SseHandlers } from "../../lib/sse-client";
@@ -297,6 +298,62 @@ describe("ChatTimeline — error event", () => {
       h.error?.({ code: "INTERNAL", message: "Boom" });
     });
     await waitFor(() => expect(onStreamingChange).toHaveBeenCalledWith(false));
+  });
+
+  it("shows 'Something went wrong' heading on error", async () => {
+    const { ref } = renderTimeline();
+    act(() => {
+      ref.current!.send("Q");
+    });
+    act(() => {
+      const h = captureHandlers();
+      h.error?.({ code: "LLM_ERROR", message: "Service unavailable" });
+    });
+    await waitFor(() =>
+      expect(
+        screen.getByRole("heading", { name: /something went wrong/i }),
+      ).toBeInTheDocument(),
+    );
+  });
+
+  it("renders Try again button on error", async () => {
+    const { ref } = renderTimeline();
+    act(() => {
+      ref.current!.send("My question");
+    });
+    act(() => {
+      const h = captureHandlers();
+      h.error?.({ code: "LLM_ERROR", message: "Timeout" });
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId("try-again-button")).toBeInTheDocument(),
+    );
+  });
+
+  it("Try again re-submits the original user text", async () => {
+    const user = userEvent.setup();
+    vi.mocked(connectSse).mockReturnValue(() => {});
+    const { ref } = renderTimeline();
+
+    act(() => {
+      ref.current!.send("What are total sales?");
+    });
+    act(() => {
+      const h = captureHandlers();
+      h.error?.({ code: "LLM_ERROR", message: "Timeout" });
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId("try-again-button")).toBeInTheDocument(),
+    );
+
+    const callsBefore = vi.mocked(connectSse).mock.calls.length;
+    await user.click(screen.getByTestId("try-again-button"));
+
+    // connectSse should be called again with the same text
+    const callsAfter = vi.mocked(connectSse).mock.calls.length;
+    expect(callsAfter).toBeGreaterThan(callsBefore);
+    const lastArgs = vi.mocked(connectSse).mock.calls[callsAfter - 1];
+    expect(lastArgs[1]).toBe("What are total sales?");
   });
 });
 
