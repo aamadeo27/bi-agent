@@ -4,6 +4,7 @@ import { z } from "zod";
 import type { ApiErrorResponse } from "@bi/contracts";
 import { RoleSchema, ResourceGrantSchema } from "@bi/contracts";
 import { logger } from "../observability/logger.js";
+import { emitAdminAudit } from "../audit/index.js";
 
 export const rolesRouter: ExpressRouter = Router();
 
@@ -185,6 +186,11 @@ rolesRouter.patch("/:id", async (req: Request, res: Response) => {
       return;
     }
     res.json(mapRow(updated[0]));
+    emitAdminAudit(req.auth!, req.ip, {
+      type: "role_changed",
+      outcome: "success",
+      detail: { roleId: id, newName: updated[0].name },
+    }).catch(() => {});
   } catch (err: unknown) {
     if (isUniqueViolation(err)) {
       const body: ApiErrorResponse = {
@@ -357,6 +363,11 @@ rolesRouter.put("/:id/grants", async (req: Request, res: Response) => {
     }
 
     res.json(result.map(mapGrantRow));
+    emitAdminAudit(req.auth!, req.ip, {
+      type: "permission_changed",
+      outcome: "success",
+      detail: { roleId: id, grantCount: grants.length },
+    }).catch(() => {});
   } catch (err) {
     logger.error(err, "grants PUT error");
     const body: ApiErrorResponse = { code: "INTERNAL", message: "Failed to replace grants" };

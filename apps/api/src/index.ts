@@ -9,7 +9,7 @@ import { tenantScopeMiddleware } from "./middleware/tenant-scope.js";
 import { meRouter } from "./me/index.js";
 import { authRouter } from "./auth/router.js";
 import { adminUsersRouter } from "./admin/users-router.js";
-import { rolesRouter, requireAdminCapability, schemaRouter, dataSourcesRouter } from "./admin/index.js";
+import { rolesRouter, requireAdminCapability, schemaRouter, dataSourcesRouter, auditRouter } from "./admin/index.js";
 import { conversationsRouter } from "./conversations/router.js";
 import { messagesRouter } from "./messages/router.js";
 import { startRetentionScheduler } from "./conversations/retention-scheduler.js";
@@ -46,6 +46,7 @@ protectedRouter.use("/admin/users", adminUsersRouter);
 protectedRouter.use("/admin/roles", requireAdminCapability, rolesRouter);
 protectedRouter.use("/admin/schema", requireAdminCapability, schemaRouter);
 protectedRouter.use("/admin/data-sources", requireAdminCapability, dataSourcesRouter);
+protectedRouter.use("/admin/audit", requireAdminCapability, auditRouter);
 protectedRouter.use("/conversations", conversationsRouter);
 protectedRouter.use("/messages", messagesRouter);
 

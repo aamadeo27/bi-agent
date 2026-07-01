@@ -5,6 +5,7 @@ import type { ApiErrorResponse } from "@bi/contracts";
 import { DataSourceSchema } from "@bi/contracts";
 import { logger } from "../observability/logger.js";
 import { encryptCredential } from "../datasource/vault.js";
+import { emitAdminAudit } from "../audit/index.js";
 
 export const dataSourcesRouter: ExpressRouter = Router();
 
@@ -128,6 +129,12 @@ dataSourcesRouter.post("/", async (req: Request, res: Response) => {
       ),
     );
     res.status(201).json(mapRow(rows[0]));
+    emitAdminAudit(req.auth!, typeof req.ip === "string" ? req.ip : undefined, {
+      type: "data_source_changed",
+      outcome: "success",
+      dataSourceId: id,
+      detail: { action: "created", name, dsType: type },
+    }).catch(() => {});
   } catch (err) {
     logger.error(err, "data-sources POST error");
     const body: ApiErrorResponse = {
@@ -203,6 +210,12 @@ dataSourcesRouter.patch("/:id", async (req: Request, res: Response) => {
       return;
     }
     res.json(mapRow(updated[0]));
+    emitAdminAudit(req.auth!, typeof req.ip === "string" ? req.ip : undefined, {
+      type: "data_source_changed",
+      outcome: "success",
+      dataSourceId: String(id),
+      detail: { action: "updated", name: updated[0].name, dsType: updated[0].type },
+    }).catch(() => {});
   } catch (err) {
     logger.error(err, "data-sources PATCH /:id error");
     const body: ApiErrorResponse = {
@@ -230,6 +243,12 @@ dataSourcesRouter.delete("/:id", async (req: Request, res: Response) => {
       return;
     }
     res.status(204).send();
+    emitAdminAudit(req.auth!, typeof req.ip === "string" ? req.ip : undefined, {
+      type: "data_source_changed",
+      outcome: "success",
+      dataSourceId: String(id),
+      detail: { action: "deleted" },
+    }).catch(() => {});
   } catch (err) {
     logger.error(err, "data-sources DELETE /:id error");
     const body: ApiErrorResponse = {
