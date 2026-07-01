@@ -221,5 +221,12 @@ export async function acceptInvite(
     db
   );
 
-  return { accessToken, refreshRaw, refreshExpiresAt };
+  return {
+    accessToken,
+    refreshRaw,
+    refreshExpiresAt,
+    userId: activatedUser.id,
+    tenantId: activatedUser.tenantId,
+    roleId: activatedUser.roleId ?? null,
+  };
 }

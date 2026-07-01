@@ -1,12 +1,16 @@
+import { randomUUID } from "node:crypto";
 import { Router } from "express";
 import type { Router as ExpressRouter, Request, Response } from "express";
 import { getPrisma } from "../db/client.js";
 import { login, refresh, logout } from "./auth-service.js";
+import type { AuthFailContext } from "./auth-service.js";
 import { acceptInvite } from "./invite-service.js";
 import { REFRESH_COOKIE_NAME } from "./token-service.js";
 import { LoginRequestSchema, InviteAcceptRequestSchema } from "@bi/contracts";
 import type { ApiErrorResponse } from "@bi/contracts";
 import { logger } from "../observability/logger.js";
+import { withTenant } from "../db/with-tenant.js";
+import { INSERT_SQL } from "../audit/index.js";
 
 export const authRouter: ExpressRouter = Router();
 
@@ -38,6 +42,8 @@ authRouter.post("/login", async (req: Request, res: Response) => {
       maxAge: result.refreshExpiresAt.getTime() - Date.now(),
     });
     res.status(200).json({ accessToken: result.accessToken });
+    // Emit login audit fire-and-forget (after response sent; never throws)
+    emitLoginAudit(result.tenantId, result.userId, result.roleId, "login", "success", req.ip);
   } catch (err: unknown) {
     if ((err as { code?: string }).code === "AUTH") {
       const body: ApiErrorResponse = {
@@ -45,6 +51,15 @@ authRouter.post("/login", async (req: Request, res: Response) => {
         message: "Invalid credentials",
       };
       res.status(401).json(body);
+      // Emit login_failed — covers both known-user (wrong creds) and unknown-email cases
+      const ctx = (err as Partial<AuthFailContext>).auditContext;
+      if (ctx?.tenantId) {
+        // User exists but auth failed — emit against their tenant
+        emitLoginAudit(ctx.tenantId, ctx.userId, ctx.roleId, "login_failed", "error", req.ip);
+      } else {
+        // Unknown email — look up in platform DB so every failed login is auditable
+        emitLoginFailedForEmail(parsed.data.email, req.ip);
+      }
       return;
     }
     logger.error(err, "login error");
@@ -144,3 +159,71 @@ authRouter.post("/logout", async (req: Request, res: Response) => {
   res.status(204).send();
 });
 
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+/**
+ * Emit a login or login_failed audit event for a user whose tenantId is known.
+ * Resolves role name from the tenant schema in the same transaction.
+ * Never throws.
+ */
+export async function emitLoginAudit(
+  tenantId: string,
+  userId: string,
+  roleId: string | null,
+  type: "login" | "login_failed",
+  outcome: "success" | "error",
+  ip: string | undefined,
+): Promise<void> {
+  if (!tenantId) return;
+  try {
+    await withTenant(tenantId, async (tx) => {
+      let roleName = "none";
+      if (roleId) {
+        const rows = await tx.$queryRawUnsafe<Array<{ name: string }>>(
+          `SELECT name FROM roles WHERE id = $1`,
+          roleId,
+        );
+        roleName = rows[0]?.name ?? "unknown";
+      }
+      await tx.$executeRawUnsafe(
+        INSERT_SQL,
+        randomUUID(),
+        tenantId,
+        new Date().toISOString(),
+        userId,
+        roleName,
+        type,
+        outcome,
+        null,
+        JSON.stringify({}),
+        ip ?? null,
+      );
+    });
+  } catch (err) {
+    logger.error({ err }, `emitLoginAudit(${type}): failed`);
+  }
+}
+
+/**
+ * Emit login_failed for an email whose user may or may not exist.
+ * Looks up the user in the platform DB (fire-and-forget after the 401 is sent).
+ * If the user has a tenant, emits the audit event there.
+ * If truly unknown email, logs a warning — no valid tenant to scope the DB event to.
+ * Never throws.
+ */
+async function emitLoginFailedForEmail(email: string, ip: string | undefined): Promise<void> {
+  try {
+    const user = await getPrisma().user.findUnique({
+      where: { email },
+      select: { id: true, tenantId: true, roleId: true },
+    });
+    if (user?.tenantId) {
+      await emitLoginAudit(user.tenantId, user.id, user.roleId ?? null, "login_failed", "error", ip);
+    } else {
+      // User not in DB — no tenant to scope the audit to; surface via app log.
+      logger.warn({ email }, "login_failed: unknown email, no audit tenant available");
+    }
+  } catch (err) {
+    logger.error({ err }, "emitLoginFailedForEmail: failed");
+  }
+}

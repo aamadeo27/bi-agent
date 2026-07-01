@@ -6,6 +6,14 @@ import type { AuthContext } from "../middleware/auth.js";
 import { adminUsersRouter } from "./users-router.js";
 import { requireAdminCapability } from "./require-admin.js";
 
+// ── Audit mock ────────────────────────────────────────────────────────────────
+
+vi.mock("../audit/index.js", () => ({
+  emitAdminAudit: vi.fn().mockResolvedValue(undefined),
+}));
+
+import { emitAdminAudit } from "../audit/index.js";
+
 // ── Mock getPrisma ────────────────────────────────────────────────────────────
 
 const mockPrismaUserUpdate = vi.fn().mockResolvedValue({});
@@ -445,5 +453,58 @@ describe("tenant isolation", () => {
 
     expect(res.status).toBe(403);
     expect(res.body.code).toBe("TENANT");
+  });
+});
+
+// ── Audit emission call-site tests ────────────────────────────────────────────
+
+describe("audit emission on user mutations", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("emits user_role_assigned audit when PATCH /:id changes roleId", async () => {
+    const updated = { ...USER_ROW, role_id: "role-new" };
+    let callCount = 0;
+    const app = buildRouterApp(ADMIN_AUTH, () => {
+      callCount++;
+      return callCount === 1 ? [USER_ROW] : [updated];
+    });
+
+    const res = await request(app)
+      .patch("/api/admin/users/user-1")
+      .send({ roleId: "role-new" });
+
+    expect(res.status).toBe(200);
+    expect(vi.mocked(emitAdminAudit)).toHaveBeenCalledOnce();
+    expect(vi.mocked(emitAdminAudit)).toHaveBeenCalledWith(
+      ADMIN_AUTH,
+      expect.anything(), // req.ip value depends on test environment
+      expect.objectContaining({ type: "user_role_assigned", outcome: "success" }),
+    );
+  });
+
+  it("does NOT emit user_role_assigned when only status changes (no roleId in body)", async () => {
+    const updated = { ...USER_ROW, status: "suspended" as const };
+    let callCount = 0;
+    const app = buildRouterApp(ADMIN_AUTH, () => {
+      callCount++;
+      return callCount === 1 ? [USER_ROW] : [updated];
+    });
+
+    const res = await request(app)
+      .patch("/api/admin/users/user-1")
+      .send({ status: "suspended" });
+
+    expect(res.status).toBe(200);
+    expect(vi.mocked(emitAdminAudit)).not.toHaveBeenCalled();
+  });
+
+  it("does NOT emit user_role_assigned when PATCH /:id returns 404", async () => {
+    // Return empty array to simulate "user not found" (null would throw .length error)
+    const app = buildRouterApp(ADMIN_AUTH, () => []);
+    const res = await request(app)
+      .patch("/api/admin/users/no-such-id")
+      .send({ roleId: "role-x" });
+    expect(res.status).toBe(404);
+    expect(vi.mocked(emitAdminAudit)).not.toHaveBeenCalled();
   });
 });
