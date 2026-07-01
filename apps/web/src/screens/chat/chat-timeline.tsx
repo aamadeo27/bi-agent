@@ -77,6 +77,8 @@ export const ChatTimeline = forwardRef<ChatTimelineHandle, ChatTimelineProps>(
     const cleanupRef = useRef<(() => void) | null>(null);
     // Per-instance ID counter — isolated between component instances and test renders.
     const nextIdRef = useRef(0);
+    // Last submitted user text — used by the "Try again" retry callback.
+    const lastUserTextRef = useRef<string>("");
 
     // Reset messages when conversation changes
     useEffect(() => {
@@ -126,6 +128,8 @@ export const ChatTimeline = forwardRef<ChatTimelineHandle, ChatTimelineProps>(
       (text: string) => {
         // Abort any prior in-flight stream
         cleanupRef.current?.();
+        // Store for retry
+        lastUserTextRef.current = text;
 
         // Per-instance IDs — not module-level, so test runs stay isolated.
         const userLocalId = `local-${++nextIdRef.current}`;
@@ -306,6 +310,7 @@ export const ChatTimeline = forwardRef<ChatTimelineHandle, ChatTimelineProps>(
                         text={msg.text}
                         timestamp={msg.timestamp}
                         errorMsg={msg.errorMsg ?? "An error occurred."}
+                        onRetry={() => send(lastUserTextRef.current)}
                       />
                     );
 

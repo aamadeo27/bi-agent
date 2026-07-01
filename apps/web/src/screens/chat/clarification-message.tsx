@@ -35,7 +35,7 @@ export function ClarificationMessage({ text }: ClarificationMessageProps) {
         </div>
 
         {/* Body — clarification text */}
-        <div className="text-body text-neutral-900">
+        <div className="text-body-lg text-neutral-900">
           {renderMarkdown(text)}
         </div>
       </div>
@@ -54,6 +54,7 @@ function QuestionIcon({ className }: { className?: string }) {
       strokeLinecap="round"
       strokeLinejoin="round"
       className={className}
+      aria-hidden="true"
     >
       <circle cx="12" cy="12" r="10" />
       <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
