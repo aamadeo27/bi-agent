@@ -34,8 +34,7 @@ import type {
   PermissionBlock,
   AuditEventType,
 } from "@bi/contracts";
-import { createRequestLogger } from "../observability/logger.js";
-import { logger } from "../observability/logger.js";
+import { createRequestLogger, logger } from "../observability/logger.js";
 import { getTracer } from "../observability/otel.js";
 import { getAskMetrics } from "../observability/metrics.js";
 
@@ -43,6 +42,24 @@ import { getAskMetrics } from "../observability/metrics.js";
 
 /** Token budget for windowed conversation history injected into LLM context. */
 const HISTORY_TOKEN_BUDGET = 4_000;
+
+/**
+ * Approximate character-to-token ratio used for input-token estimation.
+ * Real tokenisers vary (GPT-4 ~4 chars/token, Gemini similar); this constant
+ * gives cost-attribution signal without requiring adapter-level token counts.
+ */
+const APPROX_CHARS_PER_TOKEN = 4;
+
+/**
+ * Per-1 000-token cost defaults (Gemini Flash pricing as of 2025-Q2).
+ * Override via env vars for any other model or updated pricing.
+ */
+const COST_PER_1K_INPUT_TOKENS_USD = Number(
+  process.env["LLM_COST_PER_1K_INPUT_TOKENS_USD"] ?? "0.0001",
+);
+const COST_PER_1K_OUTPUT_TOKENS_USD = Number(
+  process.env["LLM_COST_PER_1K_OUTPUT_TOKENS_USD"] ?? "0.0004",
+);
 
 // ── Public types ───────────────────────────────────────────────────────────────
 
@@ -372,21 +389,28 @@ export async function runAskPipeline(args: OrchestratorArgs): Promise<void> {
 
       // ── Step 2: Build LLM context (schema metadata only — GAP-18) ────────────
       const schemaPrompt = buildSchemaPrompt(grants, dataSource.id);
-      const history = historyMessages.map((m) => ({
-        role: m.role as "user" | "assistant",
-        content: m.content,
+      const history = historyMessages.map((hm) => ({
+        role: hm.role as "user" | "assistant",
+        content: hm.content,
       }));
+      // Pre-compute history character count for input-token estimation.
+      const historyChars = history.reduce((acc, hm) => acc + hm.content.length, 0);
 
       // ── Step 3: Generate query proposal ──────────────────────────────────────
       const llmGenerateSpan = tracer.startSpan("ask.llm.generate", {
         attributes: {
           "tenant.id": tenantId,
+          "user.id": userId,
+          "role.id": roleId,
           "request.id": requestId,
           "llm.provider": llm.id,
           "llm.model": llm.model,
         },
       });
       const llmGenStart = Date.now();
+      // Estimate input tokens: system prompt + schema + history + user message.
+      const generateInputChars = schemaPrompt.length + text.length + historyChars;
+      const generateInputTokens = Math.ceil(generateInputChars / APPROX_CHARS_PER_TOKEN);
       let proposal;
       try {
         proposal = await llm.generateQuery({
@@ -405,6 +429,11 @@ export async function runAskPipeline(args: OrchestratorArgs): Promise<void> {
           provider: llm.id,
           model: llm.model,
         });
+        m.llmTokensIn.add(generateInputTokens, {
+          tenant_id: tenantId,
+          provider: llm.id,
+          model: llm.model,
+        });
       }
 
       reqLog.debug({ queryType: proposal.queryType }, "orchestrator: query generated");
@@ -418,8 +447,9 @@ export async function runAskPipeline(args: OrchestratorArgs): Promise<void> {
       const gateSpan = tracer.startSpan("ask.gate.evaluate", {
         attributes: {
           "tenant.id": tenantId,
-          "request.id": requestId,
+          "user.id": userId,
           "role.id": roleId,
+          "request.id": requestId,
           "role.name": roleName,
           "gate.query_type": proposal.queryType,
         },
@@ -475,6 +505,8 @@ export async function runAskPipeline(args: OrchestratorArgs): Promise<void> {
       const validatorSpan = tracer.startSpan("ask.query.validate", {
         attributes: {
           "tenant.id": tenantId,
+          "user.id": userId,
+          "role.id": roleId,
           "request.id": requestId,
           "gate.query_type": proposal.queryType,
         },
@@ -509,6 +541,8 @@ export async function runAskPipeline(args: OrchestratorArgs): Promise<void> {
       const dsSpan = tracer.startSpan("ask.datasource.execute", {
         attributes: {
           "tenant.id": tenantId,
+          "user.id": userId,
+          "role.id": roleId,
           "request.id": requestId,
           "datasource.id": dataSource.id,
           "datasource.type": dataSource.type,
@@ -576,9 +610,15 @@ export async function runAskPipeline(args: OrchestratorArgs): Promise<void> {
         "Describe these results concisely. Do not enumerate individual row values.",
       ].join("\n");
 
+      // Estimate narration-stream input tokens: narrationPrompt + history + user message.
+      const narrationInputChars = narrationPrompt.length + text.length + historyChars;
+      const narrationInputTokens = Math.ceil(narrationInputChars / APPROX_CHARS_PER_TOKEN);
+
       const streamSpan = tracer.startSpan("ask.llm.stream", {
         attributes: {
           "tenant.id": tenantId,
+          "user.id": userId,
+          "role.id": roleId,
           "request.id": requestId,
           "llm.provider": llm.id,
           "llm.model": llm.model,
@@ -617,9 +657,24 @@ export async function runAskPipeline(args: OrchestratorArgs): Promise<void> {
           provider: llm.id,
           model: llm.model,
         });
-        // Approximate token counts (output tokens ~ number of chunks).
-        // When the LLM adapter exposes usage, replace with exact values.
+        // Narration stream input tokens.
+        m.llmTokensIn.add(narrationInputTokens, {
+          tenant_id: tenantId,
+          provider: llm.id,
+          model: llm.model,
+        });
+        // Output tokens ≈ chunks emitted; replace with exact usage when adapter exposes it.
         m.llmTokensOut.add(tokenCount, {
+          tenant_id: tenantId,
+          provider: llm.id,
+          model: llm.model,
+        });
+        // Estimated cost covering both LLM calls in this pipeline run.
+        const totalInputTokens = generateInputTokens + narrationInputTokens;
+        const costUsd =
+          (totalInputTokens / 1000) * COST_PER_1K_INPUT_TOKENS_USD +
+          (tokenCount / 1000) * COST_PER_1K_OUTPUT_TOKENS_USD;
+        m.llmCostUsd.add(costUsd, {
           tenant_id: tenantId,
           provider: llm.id,
           model: llm.model,

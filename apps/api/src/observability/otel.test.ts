@@ -87,6 +87,7 @@ afterEach(async () => {
 
 function emitGateDecision(opts: {
   tenantId: string;
+  userId: string;
   roleId: string;
   decision: "allow" | "block";
   requestId: string;
@@ -97,8 +98,9 @@ function emitGateDecision(opts: {
   const span = tracer.startSpan("ask.gate.evaluate", {
     attributes: {
       "tenant.id": opts.tenantId,
-      "request.id": opts.requestId,
+      "user.id": opts.userId,
       "role.id": opts.roleId,
+      "request.id": opts.requestId,
       "gate.decision": opts.decision,
     },
   });
@@ -124,6 +126,7 @@ describe("gate-block smoke test", () => {
   it("emits ask.gate.decisions counter with decision=block attributes", async () => {
     emitGateDecision({
       tenantId: "tenant-abc",
+      userId: "user-001",
       roleId: "role-xyz",
       decision: "block",
       requestId: "req-001",
@@ -155,6 +158,7 @@ describe("gate-block smoke test", () => {
   it("emits ask.errors counter with error_code=GATE_BLOCK on block", async () => {
     emitGateDecision({
       tenantId: "tenant-abc",
+      userId: "user-001",
       roleId: "role-xyz",
       decision: "block",
       requestId: "req-002",
@@ -185,6 +189,7 @@ describe("gate-block smoke test", () => {
   it("emits ask.gate.evaluate span with required attributes on block", async () => {
     emitGateDecision({
       tenantId: "tenant-abc",
+      userId: "user-001",
       roleId: "role-xyz",
       decision: "block",
       requestId: "req-003",
@@ -195,8 +200,9 @@ describe("gate-block smoke test", () => {
     expect(gateSpan).toBeDefined();
 
     expect(gateSpan?.attributes["tenant.id"]).toBe("tenant-abc");
-    expect(gateSpan?.attributes["request.id"]).toBe("req-003");
+    expect(gateSpan?.attributes["user.id"]).toBe("user-001");
     expect(gateSpan?.attributes["role.id"]).toBe("role-xyz");
+    expect(gateSpan?.attributes["request.id"]).toBe("req-003");
     expect(gateSpan?.attributes["gate.decision"]).toBe("block");
     expect(gateSpan?.attributes["gate.missing_count"]).toBe(2);
   });
@@ -204,6 +210,7 @@ describe("gate-block smoke test", () => {
   it("does NOT emit ask.errors on allow decision", async () => {
     emitGateDecision({
       tenantId: "tenant-abc",
+      userId: "user-001",
       roleId: "role-xyz",
       decision: "allow",
       requestId: "req-004",
@@ -278,8 +285,11 @@ describe("span attribute redaction — no credentials or row data", () => {
     "credential",
     "authorization",
     "cookie",
-    // Row data should never appear as span attributes
+    // Row data / query text must never appear as span attributes.
+    // Covers bare name, OTel semantic convention (db.statement), and common variants.
     "sql",
+    "db.statement",
+    "db.query",
     "row_data",
     "query_text",
     "result_rows",
@@ -288,6 +298,7 @@ describe("span attribute redaction — no credentials or row data", () => {
   it("ask.gate.evaluate span contains no forbidden attribute keys", () => {
     emitGateDecision({
       tenantId: "tenant-test",
+      userId: "user-test",
       roleId: "role-test",
       decision: "block",
       requestId: "req-redact-1",
@@ -308,6 +319,7 @@ describe("span attribute redaction — no credentials or row data", () => {
   it("span attributes contain expected identity/context fields", () => {
     emitGateDecision({
       tenantId: "tenant-test",
+      userId: "user-test",
       roleId: "role-test",
       decision: "allow",
       requestId: "req-redact-2",
@@ -319,8 +331,9 @@ describe("span attribute redaction — no credentials or row data", () => {
 
     // These fields MUST be present per monitoring-direction §"Standing requirements"
     expect(gateSpan?.attributes).toHaveProperty("tenant.id");
-    expect(gateSpan?.attributes).toHaveProperty("request.id");
+    expect(gateSpan?.attributes).toHaveProperty("user.id");
     expect(gateSpan?.attributes).toHaveProperty("role.id");
+    expect(gateSpan?.attributes).toHaveProperty("request.id");
   });
 });
 
@@ -334,6 +347,7 @@ describe("metric instrument presence", () => {
     expect(m.llmStreamLatency).toBeDefined();
     expect(m.llmTokensIn).toBeDefined();
     expect(m.llmTokensOut).toBeDefined();
+    expect(m.llmCostUsd).toBeDefined();
     expect(m.errors).toBeDefined();
     expect(m.streamingActive).toBeDefined();
     expect(m.streamingAborted).toBeDefined();

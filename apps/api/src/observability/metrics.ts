@@ -65,6 +65,13 @@ export interface AskMetrics {
   llmTokensOut: Counter;
 
   /**
+   * Estimated LLM cost in USD per request, computed from approximate token counts
+   * and per-1k-token pricing from env vars.
+   * Attributes: tenant_id, provider, model
+   */
+  llmCostUsd: Counter;
+
+  /**
    * Pipeline error counts by error code (monitoring-direction §4 taxonomy).
    * Attributes: error_code, tenant_id
    */
@@ -125,6 +132,11 @@ export function getAskMetrics(): AskMetrics {
 
     llmTokensOut: meter.createCounter("ask.llm.tokens.output", {
       description: "LLM output (completion) token count per request",
+    }),
+
+    llmCostUsd: meter.createCounter("ask.llm.cost.usd", {
+      description: "Estimated LLM cost in USD per request (approximate, based on token counts and configured pricing)",
+      unit: "USD",
     }),
 
     errors: meter.createCounter("ask.errors", {
