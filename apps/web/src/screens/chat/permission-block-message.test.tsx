@@ -63,6 +63,19 @@ describe("PermissionBlockMessage — rendering", () => {
     expect(screen.getByText(/Access needed: read/i)).toBeInTheDocument();
   });
 
+  it("renders kind label prefix (Flow 6 step 4)", () => {
+    render(<PermissionBlockMessage block={BLOCK_TABLE} />);
+    // BLOCK_TABLE has kind="table" — label should read "Table:"
+    expect(screen.getByText(/Table:/i)).toBeInTheDocument();
+  });
+
+  it("renders distinct kind labels for each item type", () => {
+    render(<PermissionBlockMessage block={BLOCK_MULTI} />);
+    expect(screen.getByText(/Table:/i)).toBeInTheDocument();
+    expect(screen.getByText(/Column:/i)).toBeInTheDocument();
+    expect(screen.getByText(/Schema:/i)).toBeInTheDocument();
+  });
+
   it("renders all missing resources", () => {
     render(<PermissionBlockMessage block={BLOCK_MULTI} />);
     expect(screen.getByText("sales.orders")).toBeInTheDocument();

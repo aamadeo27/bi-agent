@@ -56,14 +56,13 @@ export function SystemMessageBubble({
           ]
             .filter(Boolean)
             .join(" ")}
-          {...(hasError ? { role: "alert" } : {})}
+          role={hasError ? "alert" : undefined}
         >
           {/* Error heading (§11: "Something went wrong") */}
           {hasError && (
             <div className="flex items-center gap-2">
               <AlertCircleIcon
                 className="h-4 w-4 shrink-0 text-semantic-error"
-                aria-hidden="true"
               />
               <h3 className="text-heading-2 text-semantic-error">Something went wrong</h3>
             </div>
@@ -133,6 +132,7 @@ function AlertCircleIcon({ className }: { className?: string }) {
       strokeLinecap="round"
       strokeLinejoin="round"
       className={className}
+      aria-hidden="true"
     >
       <circle cx="12" cy="12" r="10" />
       <line x1="12" y1="8" x2="12" y2="12" />

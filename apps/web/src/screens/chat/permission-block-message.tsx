@@ -27,11 +27,10 @@ export function PermissionBlockMessage({ block }: PermissionBlockMessageProps) {
       <div
         className="flex w-full max-w-[85%] flex-col gap-2 rounded-lg border border-neutral-300 border-l-4 border-l-semantic-error bg-white px-4 py-3"
         role="alert"
-        aria-live="assertive"
       >
         {/* Heading row: shield-with-x icon + text */}
         <div className="flex items-center gap-2">
-          <ShieldXIcon className="h-5 w-5 shrink-0 text-semantic-error" aria-hidden="true" />
+          <ShieldXIcon className="h-5 w-5 shrink-0 text-semantic-error" />
           <h3 className="text-heading-2 text-semantic-error">Access restricted</h3>
         </div>
 
@@ -41,11 +40,12 @@ export function PermissionBlockMessage({ block }: PermissionBlockMessageProps) {
           following resources required to answer this question:
         </p>
 
-        {/* Blocked resource list: lock icon + monospace identifier + access label */}
+        {/* Blocked resource list: kind label + lock icon + monospace identifier + access label */}
         <ul className="space-y-1.5" aria-label="Blocked resources">
-          {block.missing.map((item, i) => (
-            <li key={i} className="flex items-center gap-2 text-body-sm text-neutral-700">
-              <LockIcon className="h-3.5 w-3.5 shrink-0 text-semantic-error" aria-hidden="true" />
+          {block.missing.map((item) => (
+            <li key={item.identifier} className="flex items-center gap-2 text-body-sm text-neutral-700">
+              <LockIcon className="h-3.5 w-3.5 shrink-0 text-semantic-error" />
+              <span className="capitalize text-neutral-500">{item.kind}:</span>
               <code className="font-mono text-neutral-900">{item.identifier}</code>
               <span className="text-neutral-500">— Access needed: {item.accessNeeded}</span>
             </li>
@@ -74,6 +74,7 @@ function ShieldXIcon({ className }: { className?: string }) {
       strokeLinecap="round"
       strokeLinejoin="round"
       className={className}
+      aria-hidden="true"
     >
       <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
       <line x1="9" y1="9" x2="15" y2="15" />
@@ -94,6 +95,7 @@ function LockIcon({ className }: { className?: string }) {
       strokeLinecap="round"
       strokeLinejoin="round"
       className={className}
+      aria-hidden="true"
     >
       <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
       <path d="M7 11V7a5 5 0 0 1 10 0v4" />

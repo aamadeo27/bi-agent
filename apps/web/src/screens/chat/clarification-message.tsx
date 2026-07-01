@@ -35,7 +35,7 @@ export function ClarificationMessage({ text }: ClarificationMessageProps) {
         </div>
 
         {/* Body — clarification text */}
-        <div className="text-body text-neutral-900">
+        <div className="text-body-lg text-neutral-900">
           {renderMarkdown(text)}
         </div>
       </div>
